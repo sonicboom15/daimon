@@ -1,0 +1,17 @@
+port: 3500
+
+components:
+  - name: gpt4o
+    type: openai
+    metadata:
+      model: gpt-4o
+      # api_key: sk-...  # defaults to OPENAI_API_KEY env var
+
+  - name: claude
+    type: anthropic
+    metadata:
+      model: claude-opus-4-7
+      # api_key: sk-ant-...  # defaults to ANTHROPIC_API_KEY env var
+
+telemetry:
+  otlp_endpoint: ""  # e.g. "localhost:4318" for a local OTel collector
