@@ -30,8 +30,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
-      # Submits a PR to microsoft/winget-pkgs automatically
+      # Submits a PR to microsoft/winget-pkgs automatically.
+      # Remove the `if` condition after the first manual submission is merged.
       - uses: vedantmgoyal9/winget-releaser@v2
+        if: ${{ vars.WINGET_SUBMITTED == 'true' }}
         with:
           identifier: sonicboom15.daimon
           installers-regex: '_windows_amd64\.zip$'
