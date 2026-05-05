@@ -29,6 +29,44 @@ archives:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+# .deb and .rpm for Linux package managers (apt, yum, dnf)
+nfpms:
+  - id: daimon
+    package_name: daimon
+    homepage: https://github.com/sonicboom15/daimon
+    description: "The spirit that runs alongside your AI app — a pluggable sidecar runtime for LLMs"
+    maintainer: "sonicboom15 <rishikumar15@gmail.com>"
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+
+# Homebrew tap — requires sonicboom15/homebrew-tap repo
+brews:
+  - repository:
+      owner: sonicboom15
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/sonicboom15/daimon
+    description: "The spirit that runs alongside your AI app — a pluggable sidecar runtime for LLMs"
+    license: Apache-2.0
+    install: |
+      bin.install "daimon"
+    test: |
+      system "#{bin}/daimon", "--help"
+
+# Scoop bucket — requires sonicboom15/scoop-bucket repo
+scoops:
+  - repository:
+      owner: sonicboom15
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/sonicboom15/daimon
+    description: "The spirit that runs alongside your AI app — a pluggable sidecar runtime for LLMs"
+    license: Apache-2.0
+
 checksum:
   name_template: checksums.txt
 
@@ -46,3 +84,34 @@ release:
     owner: sonicboom15
     name: daimon
   name_template: "v{{ .Version }}"
+  footer: |
+    ## Install
+
+    **macOS / Linux — Homebrew**
+    ```sh
+    brew tap sonicboom15/tap
+    brew install daimon
+    ```
+
+    **Windows — Winget**
+    ```powershell
+    winget install sonicboom15.daimon
+    ```
+
+    **Windows — Scoop**
+    ```powershell
+    scoop bucket add sonicboom15 https://github.com/sonicboom15/scoop-bucket
+    scoop install daimon
+    ```
+
+    **Linux — apt**
+    ```sh
+    # Download the .deb from assets below
+    sudo dpkg -i daimon_{{ .Version }}_linux_amd64.deb
+    ```
+
+    **Linux — rpm**
+    ```sh
+    # Download the .rpm from assets below
+    sudo rpm -i daimon_{{ .Version }}_linux_amd64.rpm
+    ```

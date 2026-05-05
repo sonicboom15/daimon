@@ -21,9 +21,19 @@ jobs:
           go-version: "1.25"
           cache: true
 
+      # Builds binaries, .deb/.rpm, pushes Homebrew formula + Scoop manifest
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+      # Submits a PR to microsoft/winget-pkgs automatically
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: sonicboom15.daimon
+          installers-regex: '_windows_amd64\.zip$'
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
