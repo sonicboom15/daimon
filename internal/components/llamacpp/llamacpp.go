@@ -1,13 +1,13 @@
 // Copyright 2026 the Daimon authors.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package openai provides a Conversation implementation backed by the OpenAI API.
-package openai
+// Package llamacpp provides a Conversation implementation for any server that
+// exposes an OpenAI-compatible HTTP API, including llama.cpp and LM Studio.
+package llamacpp
 
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -17,29 +17,38 @@ import (
 )
 
 func init() {
-	conversation.Register("openai", func(cfg conversation.ComponentConfig) (conversation.Conversation, error) {
+	conversation.Register("llamacpp", func(cfg conversation.ComponentConfig) (conversation.Conversation, error) {
 		return New(cfg)
 	})
 }
 
-// Component implements conversation.Conversation using the OpenAI chat completions API.
+// Component implements conversation.Conversation against any OpenAI-compatible
+// local inference server (llama.cpp, LM Studio, Ollama, etc.).
 type Component struct {
-	defaultClient openai.Client
-	defaultModel  string
-	// modelClients holds a pre-built client for each model that has its own API key.
-	modelClients map[string]openai.Client
+	client       openai.Client
+	defaultModel string
 }
 
 // New creates a Component from a ComponentConfig.
-// Metadata keys: api_key (falls back to OPENAI_API_KEY), default_model (falls back to model, then gpt-4o).
-// Per-model overrides live in cfg.Models[modelName].APIKey.
+//
+// Metadata keys:
+//
+//	base_url      — full base URL including /v1 path (default: http://localhost:8080/v1)
+//	default_model — model name sent to the server; many local servers ignore this
+//	api_key       — passed as Bearer token; most local servers don't require one
+//
+// LM Studio default base_url: http://localhost:1234/v1
+// llama.cpp default base_url: http://localhost:8080/v1
 func New(cfg conversation.ComponentConfig) (*Component, error) {
-	defaultKey := cfg.Metadata["api_key"]
-	if defaultKey == "" {
-		defaultKey = os.Getenv("OPENAI_API_KEY")
+	baseURL := cfg.Metadata["base_url"]
+	if baseURL == "" {
+		baseURL = "http://localhost:8080/v1"
 	}
-	if defaultKey == "" {
-		return nil, fmt.Errorf("openai: api_key required in metadata or OPENAI_API_KEY env var")
+
+	// Local servers typically don't enforce auth, but the SDK requires a non-empty key.
+	apiKey := cfg.Metadata["api_key"]
+	if apiKey == "" {
+		apiKey = "local"
 	}
 
 	defaultModel := cfg.Metadata["default_model"]
@@ -47,30 +56,13 @@ func New(cfg conversation.ComponentConfig) (*Component, error) {
 		defaultModel = cfg.Metadata["model"] // backward compat
 	}
 	if defaultModel == "" {
-		defaultModel = "gpt-4o"
-	}
-
-	modelClients := make(map[string]openai.Client, len(cfg.Models))
-	for model, mc := range cfg.Models {
-		key := mc.APIKey
-		if key == "" {
-			key = defaultKey
-		}
-		modelClients[model] = openai.NewClient(option.WithAPIKey(key))
+		return nil, fmt.Errorf("llamacpp: default_model is required (set it to the model name loaded in your server)")
 	}
 
 	return &Component{
-		defaultClient: openai.NewClient(option.WithAPIKey(defaultKey)),
-		defaultModel:  defaultModel,
-		modelClients:  modelClients,
+		client:       openai.NewClient(option.WithBaseURL(baseURL), option.WithAPIKey(apiKey)),
+		defaultModel: defaultModel,
 	}, nil
-}
-
-func (c *Component) clientFor(model string) openai.Client {
-	if cl, ok := c.modelClients[model]; ok {
-		return cl
-	}
-	return c.defaultClient
 }
 
 // Chat implements conversation.Conversation.
@@ -103,8 +95,7 @@ func (c *Component) Chat(ctx context.Context, req conversation.Request) (<-chan 
 		params.Temperature = oaiparam.NewOpt(*req.Temperature)
 	}
 
-	client := c.clientFor(model)
-	stream := client.Chat.Completions.NewStreaming(ctx, params)
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 
 	ch := make(chan conversation.Chunk)
 	go func() {

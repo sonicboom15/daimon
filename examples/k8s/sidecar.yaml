@@ -1,0 +1,88 @@
+# Kubernetes example: daimon as a sidecar container.
+#
+# The app container talks to daimon over localhost — no service, no DNS,
+# just HTTP on port 3500 inside the same pod.
+#
+# Usage:
+#   kubectl create secret generic ai-keys \
+#     --from-literal=anthropic-api-key=sk-ant-... \
+#     --from-literal=openai-api-key=sk-...
+#   kubectl apply -f sidecar.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: daimon-config
+data:
+  config.yaml: |
+    port: 3500
+    components:
+      - name: claude
+        type: anthropic
+        metadata:
+          default_model: claude-opus-4-7
+      - name: gpt4o
+        type: openai
+        metadata:
+          default_model: gpt-4o
+    telemetry:
+      otlp_endpoint: ""
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  labels:
+    app: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+
+        # ── your application ────────────────────────────────────────────────
+        - name: app
+          image: my-app:latest
+          env:
+            - name: DAIMON_URL
+              value: http://localhost:3500
+
+        # ── daimon sidecar ──────────────────────────────────────────────────
+        - name: daimon
+          image: ghcr.io/sonicboom15/daimon:latest
+          args: ["serve", "--config", "/etc/daimon/config.yaml"]
+          ports:
+            - containerPort: 3500
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-keys
+                  key: anthropic-api-key
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-keys
+                  key: openai-api-key
+          volumeMounts:
+            - name: daimon-config
+              mountPath: /etc/daimon
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3500
+            initialDelaySeconds: 1
+            periodSeconds: 5
+
+      volumes:
+        - name: daimon-config
+          configMap:
+            name: daimon-config

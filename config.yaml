@@ -1,0 +1,11 @@
+port: 3500
+
+components:
+  - name: llama
+    type: llamacpp
+    metadata:
+      base_url: http://host.docker.internal:1234/v1
+      default_model: meta-llama-3.1-8b-instruct
+
+telemetry:
+  otlp_endpoint: ""

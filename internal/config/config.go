@@ -11,11 +11,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ModelConfig holds per-model overrides for a component.
+type ModelConfig struct {
+	APIKey string `yaml:"api_key"`
+}
+
 // Component is a single configured provider instance.
 type Component struct {
-	Name     string            `yaml:"name"`
-	Type     string            `yaml:"type"`
-	Metadata map[string]string `yaml:"metadata"`
+	Name     string                 `yaml:"name"`
+	Type     string                 `yaml:"type"`
+	Metadata map[string]string      `yaml:"metadata"`
+	Models   map[string]ModelConfig `yaml:"models"`
 }
 
 // Telemetry holds OpenTelemetry configuration.

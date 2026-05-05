@@ -8,8 +8,22 @@ import (
 	"sync"
 )
 
-// Factory creates a Conversation from component metadata key/value pairs.
-type Factory func(metadata map[string]string) (Conversation, error)
+// ModelConfig holds per-model overrides that a component can apply when the
+// request names a specific model.
+type ModelConfig struct {
+	APIKey string
+}
+
+// ComponentConfig is the full configuration handed to a Factory.
+// Metadata carries flat key/value pairs from the YAML; Models carries
+// per-model overrides keyed by model name.
+type ComponentConfig struct {
+	Metadata map[string]string
+	Models   map[string]ModelConfig
+}
+
+// Factory creates a Conversation from a ComponentConfig.
+type Factory func(cfg ComponentConfig) (Conversation, error)
 
 var (
 	mu        sync.RWMutex
@@ -24,13 +38,13 @@ func Register(componentType string, f Factory) {
 	factories[componentType] = f
 }
 
-// New instantiates a Conversation of the given component type using metadata.
-func New(componentType string, metadata map[string]string) (Conversation, error) {
+// New instantiates a Conversation of the given component type.
+func New(componentType string, cfg ComponentConfig) (Conversation, error) {
 	mu.RLock()
 	f, ok := factories[componentType]
 	mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("unknown component type %q: did you import the component package?", componentType)
 	}
-	return f(metadata)
+	return f(cfg)
 }

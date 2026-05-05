@@ -5,10 +5,10 @@ CONFIG  := examples/config.yaml
 
 build:
 	@mkdir -p bin
-	go build -o $(BINARY) ./cmd/sidecar
+	go build -o $(BINARY) ./cmd/daimon
 
 run: build
-	$(BINARY) -config $(CONFIG)
+	$(BINARY) serve --config $(CONFIG)
 
 test:
 	go test ./...

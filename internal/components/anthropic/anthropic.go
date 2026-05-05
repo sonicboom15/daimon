@@ -18,35 +18,60 @@ import (
 )
 
 func init() {
-	conversation.Register("anthropic", func(metadata map[string]string) (conversation.Conversation, error) {
-		return New(metadata)
+	conversation.Register("anthropic", func(cfg conversation.ComponentConfig) (conversation.Conversation, error) {
+		return New(cfg)
 	})
 }
 
 // Component implements conversation.Conversation using the Anthropic Messages API.
 type Component struct {
-	client       anthropic.Client
-	defaultModel string
+	defaultClient anthropic.Client
+	defaultModel  string
+	// modelClients holds a pre-built client for each model that has its own API key.
+	modelClients map[string]anthropic.Client
 }
 
-// New creates a Component from metadata.
-// Recognized keys: api_key (falls back to ANTHROPIC_API_KEY), model (default: claude-opus-4-7).
-func New(metadata map[string]string) (*Component, error) {
-	apiKey := metadata["api_key"]
-	if apiKey == "" {
-		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+// New creates a Component from a ComponentConfig.
+// Metadata keys: api_key (falls back to ANTHROPIC_API_KEY), default_model (falls back to model, then claude-opus-4-7).
+// Per-model overrides live in cfg.Models[modelName].APIKey.
+func New(cfg conversation.ComponentConfig) (*Component, error) {
+	defaultKey := cfg.Metadata["api_key"]
+	if defaultKey == "" {
+		defaultKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
-	if apiKey == "" {
+	if defaultKey == "" {
 		return nil, fmt.Errorf("anthropic: api_key required in metadata or ANTHROPIC_API_KEY env var")
 	}
-	model := metadata["model"]
-	if model == "" {
-		model = "claude-opus-4-7"
+
+	defaultModel := cfg.Metadata["default_model"]
+	if defaultModel == "" {
+		defaultModel = cfg.Metadata["model"] // backward compat
 	}
+	if defaultModel == "" {
+		defaultModel = "claude-opus-4-7"
+	}
+
+	modelClients := make(map[string]anthropic.Client, len(cfg.Models))
+	for model, mc := range cfg.Models {
+		key := mc.APIKey
+		if key == "" {
+			key = defaultKey
+		}
+		modelClients[model] = anthropic.NewClient(option.WithAPIKey(key))
+	}
+
 	return &Component{
-		client:       anthropic.NewClient(option.WithAPIKey(apiKey)),
-		defaultModel: model,
+		defaultClient: anthropic.NewClient(option.WithAPIKey(defaultKey)),
+		defaultModel:  defaultModel,
+		modelClients:  modelClients,
 	}, nil
+}
+
+func (c *Component) clientFor(model string) anthropic.Client {
+	if cl, ok := c.modelClients[model]; ok {
+		return cl
+	}
+	return c.defaultClient
 }
 
 // Chat implements conversation.Conversation.
@@ -89,7 +114,8 @@ func (c *Component) Chat(ctx context.Context, req conversation.Request) (<-chan 
 		params.Temperature = aparam.NewOpt(*req.Temperature)
 	}
 
-	stream := c.client.Messages.NewStreaming(ctx, params)
+	client := c.clientFor(model)
+	stream := client.Messages.NewStreaming(ctx, params)
 
 	ch := make(chan conversation.Chunk)
 	go func() {
