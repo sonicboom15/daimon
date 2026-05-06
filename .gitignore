@@ -36,6 +36,9 @@ CLAUDE.md
 # wingetcreate generates manifests locally before pushing to microsoft/winget-pkgs
 manifests/
 
+# MkDocs generated site
+site/
+
 # Python SDK build artifacts
 sdk/python/dist/
 sdk/python/*.egg-info/
