@@ -1,51 +1,54 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+bin/
 
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Code coverage
 *.out
 coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
+# Go workspace
 go.work
 go.work.sum
 
-# env file
+# Dependency directories
+# vendor/
+
+# Environment
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# MkDocs generated site
+site/
+
+# Python
+sdk/python/dist/
+sdk/python/*.egg-info/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.venv/
+.venv/
+venv/
+env/
+
+# TypeScript
+sdk/typescript/node_modules/
+sdk/typescript/dist/
 
 CLAUDE.md
 
 # wingetcreate generates manifests locally before pushing to microsoft/winget-pkgs
 manifests/
-
-# MkDocs generated site
-site/
-
-# Python SDK build artifacts
-sdk/python/dist/
-sdk/python/*.egg-info/
-sdk/python/__pycache__/
-**/__pycache__/
-**/*.pyc
-**/*.pyo
-.venv/
-venv/
-env/
