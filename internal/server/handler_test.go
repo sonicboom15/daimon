@@ -54,9 +54,29 @@ func newTestServer(conv conversation.Conversation) *Server {
 		mux:        http.NewServeMux(),
 		components: map[string]conversation.Conversation{"fake": conv},
 		toolRoutes: make(map[string]toolCaller),
+		sessions:   newSessionStore(),
 	}
 	s.routes()
 	return s
+}
+
+// recordingConversation is like fakeConversation but also captures each Chat request.
+type recordingConversation struct {
+	calls    [][]conversation.Chunk
+	n        int
+	recorded []conversation.Request
+}
+
+func (r *recordingConversation) Chat(_ context.Context, req conversation.Request) (<-chan conversation.Chunk, error) {
+	r.recorded = append(r.recorded, req)
+	chunks := r.calls[min(r.n, len(r.calls)-1)]
+	r.n++
+	ch := make(chan conversation.Chunk, len(chunks))
+	for _, c := range chunks {
+		ch <- c
+	}
+	close(ch)
+	return ch, nil
 }
 
 // readSSEChunks sends a POST to /v1/converse/{component} and collects all SSE chunks.
@@ -198,6 +218,105 @@ func TestHandleConverse_AgenticLoop(t *testing.T) {
 	}
 	if conv.n != 2 {
 		t.Errorf("Chat called %d times, want 2 (one per agentic loop iteration)", conv.n)
+	}
+}
+
+func TestSession_HistoryStoredAfterFirstRequest(t *testing.T) {
+	conv := &recordingConversation{calls: [][]conversation.Chunk{{
+		{Type: conversation.ChunkText, Text: "Hi there!"},
+		{Type: conversation.ChunkDone},
+	}}}
+	srv := newTestServer(conv)
+
+	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[{"role":"user","content":"Hello"}]}`)
+
+	history, ok := srv.sessions.get("s1")
+	if !ok {
+		t.Fatal("session not stored after first request")
+	}
+	if len(history) != 2 {
+		t.Fatalf("history len = %d, want 2 (user + assistant)", len(history))
+	}
+	if history[0].Role != conversation.RoleUser || history[0].Content != "Hello" {
+		t.Errorf("history[0] = %+v, want user:Hello", history[0])
+	}
+	if history[1].Role != conversation.RoleAssistant || history[1].Content != "Hi there!" {
+		t.Errorf("history[1] = %+v, want assistant:Hi there!", history[1])
+	}
+}
+
+func TestSession_HistoryPrependedOnSecondRequest(t *testing.T) {
+	conv := &recordingConversation{calls: [][]conversation.Chunk{
+		{{Type: conversation.ChunkText, Text: "Hi!"}, {Type: conversation.ChunkDone}},
+		{{Type: conversation.ChunkText, Text: "Sure!"}, {Type: conversation.ChunkDone}},
+	}}
+	srv := newTestServer(conv)
+
+	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[{"role":"user","content":"Hello"}]}`)
+	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[{"role":"user","content":"Follow-up"}]}`)
+
+	// Second Chat call should receive [user:Hello, assistant:Hi!, user:Follow-up].
+	if len(conv.recorded) < 2 {
+		t.Fatalf("Chat called %d times, want at least 2", len(conv.recorded))
+	}
+	msgs := conv.recorded[1].Messages
+	if len(msgs) != 3 {
+		t.Fatalf("second Chat got %d messages, want 3", len(msgs))
+	}
+	if msgs[0].Content != "Hello" {
+		t.Errorf("msgs[0].Content = %q, want Hello", msgs[0].Content)
+	}
+	if msgs[1].Role != conversation.RoleAssistant || msgs[1].Content != "Hi!" {
+		t.Errorf("msgs[1] = %+v, want assistant:Hi!", msgs[1])
+	}
+	if msgs[2].Content != "Follow-up" {
+		t.Errorf("msgs[2].Content = %q, want Follow-up", msgs[2].Content)
+	}
+}
+
+func TestSession_SessionIDStrippedFromChatRequest(t *testing.T) {
+	conv := &recordingConversation{calls: [][]conversation.Chunk{{
+		{Type: conversation.ChunkDone},
+	}}}
+	srv := newTestServer(conv)
+
+	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[]}`)
+
+	if len(conv.recorded) == 0 {
+		t.Fatal("Chat was not called")
+	}
+	if conv.recorded[0].SessionID != "" {
+		t.Errorf("SessionID %q was forwarded to Chat; want it stripped", conv.recorded[0].SessionID)
+	}
+}
+
+func TestSession_NoSessionIDIsStateless(t *testing.T) {
+	conv := &recordingConversation{calls: [][]conversation.Chunk{{
+		{Type: conversation.ChunkText, Text: "hello"},
+		{Type: conversation.ChunkDone},
+	}}}
+	srv := newTestServer(conv)
+
+	readSSEChunks(t, srv, "fake", `{"messages":[{"role":"user","content":"hi"}]}`)
+
+	if srv.sessions.len() != 0 {
+		t.Errorf("session count = %d, want 0 for stateless request", srv.sessions.len())
+	}
+}
+
+func TestSession_DeleteClearsHistory(t *testing.T) {
+	srv := newTestServer(&fakeConversation{calls: [][]conversation.Chunk{{}}})
+	srv.sessions.set("s1", []conversation.Message{{Role: conversation.RoleUser, Content: "hi"}})
+
+	req := httptest.NewRequest("DELETE", "/v1/sessions/s1", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("DELETE status = %d, want 204", w.Code)
+	}
+	if _, ok := srv.sessions.get("s1"); ok {
+		t.Error("session still present after DELETE")
 	}
 }
 

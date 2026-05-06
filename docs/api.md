@@ -68,6 +68,7 @@ Content-Type: application/json
 | `presence_penalty` | float | no | Presence penalty (OpenAI / llamacpp). |
 | `seed` | int | no | RNG seed (OpenAI / llamacpp). |
 | `tools` | array | no | Tools the model may call (see [Tools](#tools)). MCP tools are injected automatically. |
+| `session_id` | string | no | Opaque identifier for a server-side session (see [Sessions](#sessions)). |
 
 Omitted inference parameters fall back to the component's configured `defaults:`, then to the provider's own defaults.
 
@@ -178,6 +179,63 @@ After emitting this event, daimon executes the tool via the owning MCP server, a
 | `500 Internal Server Error` | Provider returned an error before streaming began. |
 
 Errors that occur *during* streaming are emitted as `{"type":"error","error":"..."}` events (the HTTP status is already 200 at that point).
+
+---
+
+## Sessions
+
+When `session_id` is included in a `/v1/converse` request, daimon maintains conversation history server-side so clients only need to send the new user turn instead of the full history.
+
+**How it works:**
+
+1. On the first request with a given `session_id`, daimon processes the request normally and stores the full exchange (incoming messages + final assistant response) under that ID.
+2. On subsequent requests with the same `session_id`, daimon prepends the stored history to the incoming `messages` before calling the provider. The client only needs to supply the new user turn.
+3. After each successful response, daimon appends the new turn (including any tool-call rounds) to the stored history.
+4. Sessions are in-memory and lost when the sidecar process restarts.
+
+**Example — two-turn conversation:**
+
+```bash
+# Turn 1: introduce yourself
+curl -sN http://127.0.0.1:3500/v1/converse/claude \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"chat-1","messages":[{"role":"user","content":"My name is Alice."}]}'
+
+# Turn 2: follow-up — server prepends [user:Alice, assistant:…] automatically
+curl -sN http://127.0.0.1:3500/v1/converse/claude \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"chat-1","messages":[{"role":"user","content":"What is my name?"}]}'
+```
+
+**Python SDK:**
+
+```python
+client = daimon.Client()
+client.chat("claude", "My name is Alice.", session_id="chat-1")
+reply = client.chat("claude", "What is my name?", session_id="chat-1")
+# reply == "Your name is Alice."
+
+client.clear_session("chat-1")  # remove history when done
+```
+
+**TypeScript SDK:**
+
+```typescript
+const client = new Client();
+await client.chat('claude', 'My name is Alice.', { session_id: 'chat-1' });
+const reply = await client.chat('claude', 'What is my name?', { session_id: 'chat-1' });
+await client.clearSession('chat-1');
+```
+
+---
+
+## `DELETE /v1/sessions/{id}`
+
+Clears the stored conversation history for the given session ID. Returns `204 No Content`. Idempotent — deleting a session that does not exist is not an error.
+
+```bash
+curl -sX DELETE http://127.0.0.1:3500/v1/sessions/chat-1
+```
 
 ---
 

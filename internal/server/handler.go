@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -32,6 +33,17 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request body: %s", err), http.StatusBadRequest)
 		return
+	}
+
+	// Extract session ID and clear it so providers never see it.
+	sessionID := req.SessionID
+	req.SessionID = ""
+
+	// Prepend stored history when the caller has an active session.
+	if sessionID != "" {
+		if history, ok := s.sessions.get(sessionID); ok {
+			req.Messages = append(history, req.Messages...)
+		}
 	}
 
 	// Inject MCP tools so every request sees the full tool catalogue.
@@ -69,13 +81,16 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 
 	// Agentic loop: run Chat, collect tool calls, execute them via MCP,
 	// append results, repeat until the model returns pure text.
+	var textBuf strings.Builder
 	for {
+		textBuf.Reset()
 		var toolCalls []conversation.ToolCall
 
 		for chunk := range chunks {
 			switch chunk.Type {
 			case conversation.ChunkText:
 				writeSSE(chunk)
+				textBuf.WriteString(chunk.Text)
 			case conversation.ChunkToolCall:
 				// Forward so clients can display progress ("calling tool X…").
 				writeSSE(chunk)
@@ -85,6 +100,13 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 				return
 			case conversation.ChunkDone:
 				if len(toolCalls) == 0 {
+					// Final text-only pass — persist the completed exchange.
+					if sessionID != "" {
+						s.sessions.set(sessionID, append(req.Messages, conversation.Message{
+							Role:    conversation.RoleAssistant,
+							Content: textBuf.String(),
+						}))
+					}
 					writeSSE(chunk)
 					return
 				}
@@ -122,6 +144,11 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	s.sessions.delete(r.PathValue("id"))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) executeTool(ctx context.Context, name string, input json.RawMessage) (string, error) {

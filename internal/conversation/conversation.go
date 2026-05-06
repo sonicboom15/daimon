@@ -47,10 +47,15 @@ type Message struct {
 // Provider-specific fields (TopK, FrequencyPenalty, PresencePenalty, Seed) are
 // silently ignored by providers that don't support them.
 type Request struct {
-	Model   string    `json:"model"`
+	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
-	Tools   []Tool    `json:"tools,omitempty"`
-	System  string   `json:"system,omitempty"` // convenience: prepended as a system message
+	Tools    []Tool    `json:"tools,omitempty"`
+	System   string    `json:"system,omitempty"` // convenience: prepended as a system message
+
+	// SessionID, when set, causes the server to prepend stored conversation
+	// history before forwarding to the provider and to persist the updated
+	// history after the response completes. Providers never see this field.
+	SessionID string `json:"session_id,omitempty"`
 
 	// Sampling parameters
 	MaxTokens        int      `json:"max_tokens,omitempty"`

@@ -58,11 +58,13 @@ class AsyncClient:
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None,
         seed: int | None = None,
+        session_id: str | None = None,
     ) -> AsyncIterator[Chunk]:
         """Async streaming: yields Chunk objects until done or error."""
         body = _build_body(
             messages, model, system, tools, max_tokens, temperature,
             top_p, top_k, stop, frequency_penalty, presence_penalty, seed,
+            session_id,
         )
         url = f"{self._base}/v1/converse/{component}"
         async with self._client().stream("POST", url, json=body) as resp:
@@ -84,7 +86,10 @@ class AsyncClient:
         model: str = "",
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        """Async text-only stream. Raises DaimonError on error, calls on_tool_call for tool events."""
+        """Async text-only stream. Raises DaimonError on error, calls on_tool_call for tool events.
+
+        Pass session_id=... to maintain server-side conversation history.
+        """
         messages = _normalise_input(prompt_or_messages)
         async for chunk in self.converse(component, messages=messages, model=model, **kwargs):
             if chunk.type == "text":
@@ -102,10 +107,18 @@ class AsyncClient:
         model: str = "",
         **kwargs: Any,
     ) -> str:
-        """Async convenience: send and return the full text response."""
+        """Async convenience: send and return the full text response.
+
+        Pass session_id=... to maintain server-side conversation history.
+        """
         messages = _normalise_input(prompt_or_messages)
         parts: list[str] = []
         async for chunk in self.converse(component, messages=messages, model=model, **kwargs):
             if chunk.type == "text":
                 parts.append(chunk.text)
         return "".join(parts)
+
+    async def clear_session(self, session_id: str) -> None:
+        """Delete the stored conversation history for the given session ID."""
+        resp = await self._client().delete(f"{self._base}/v1/sessions/{session_id}")
+        resp.raise_for_status()

@@ -66,11 +66,13 @@ class Client:
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None,
         seed: int | None = None,
+        session_id: str | None = None,
     ) -> Iterator[Chunk]:
         """Stream a chat request. Yields Chunk objects until done or error."""
         body = _build_body(
             messages, model, system, tools, max_tokens, temperature,
             top_p, top_k, stop, frequency_penalty, presence_penalty, seed,
+            session_id,
         )
         url = f"{self._base}/v1/converse/{component}"
         with self._client().stream("POST", url, json=body) as resp:
@@ -93,6 +95,8 @@ class Client:
         **kwargs: Any,
     ) -> Iterator[str]:
         """Yield text fragments. Raises DaimonError on error, calls on_tool_call for tool events.
+
+        Pass session_id=... to maintain server-side conversation history.
 
         >>> for text in client.stream("llama", "Hello!"):
         ...     print(text, end="", flush=True)
@@ -118,13 +122,21 @@ class Client:
         model: str = "",
         **kwargs: Any,
     ) -> str:
-        """Convenience wrapper: send and return the full text response."""
+        """Convenience wrapper: send and return the full text response.
+
+        Pass session_id=... to maintain server-side conversation history.
+        """
         messages = _normalise_input(prompt_or_messages)
         return "".join(
             chunk.text
             for chunk in self.converse(component, messages=messages, model=model, **kwargs)
             if chunk.type == "text"
         )
+
+    def clear_session(self, session_id: str) -> None:
+        """Delete the stored conversation history for the given session ID."""
+        resp = self._client().delete(f"{self._base}/v1/sessions/{session_id}")
+        resp.raise_for_status()
 
 
 def _build_body(
@@ -140,6 +152,7 @@ def _build_body(
     frequency_penalty: float | None,
     presence_penalty: float | None,
     seed: int | None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"messages": [_encode_msg(m) for m in messages]}
     if model:
@@ -164,6 +177,8 @@ def _build_body(
         body["presence_penalty"] = presence_penalty
     if seed is not None:
         body["seed"] = seed
+    if session_id:
+        body["session_id"] = session_id
     return body
 
 

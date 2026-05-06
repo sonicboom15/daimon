@@ -129,6 +129,66 @@ class TestConverse:
         assert chunks[0].type == "error"
 
 
+class TestSession:
+    def test_session_id_included_in_request_body(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, content=_sse_body({"type": "done"}))
+
+        client = Client()
+        client._http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        client.chat("fake", "hi", session_id="sess-abc")
+
+        assert len(captured) == 1
+        body = json.loads(captured[0].content)
+        assert body["session_id"] == "sess-abc"
+
+    def test_no_session_id_omits_field(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, content=_sse_body({"type": "done"}))
+
+        client = Client()
+        client._http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        client.chat("fake", "hi")
+
+        body = json.loads(captured[0].content)
+        assert "session_id" not in body
+
+    def test_session_id_flows_through_stream(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, content=_sse_body({"type": "text", "text": "hi"}, {"type": "done"}))
+
+        client = Client()
+        client._http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        list(client.stream("fake", "hello", session_id="sess-xyz"))
+
+        body = json.loads(captured[0].content)
+        assert body["session_id"] == "sess-xyz"
+
+    def test_clear_session_sends_delete(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(204, content=b"")
+
+        client = Client()
+        client._http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        client.clear_session("sess-abc")
+
+        assert len(captured) == 1
+        assert captured[0].method == "DELETE"
+        assert captured[0].url.path == "/v1/sessions/sess-abc"
+
+
 class TestContextManager:
     def test_enter_exit_closes_client(self):
         body = _sse_body({"type": "text", "text": "hi"}, {"type": "done"})

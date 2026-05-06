@@ -25,8 +25,9 @@ type toolCaller interface {
 type Server struct {
 	mux        *http.ServeMux
 	components map[string]conversation.Conversation
-	tools      []conversation.Tool      // aggregated from all MCP servers at startup
-	toolRoutes map[string]toolCaller    // tool name → owning MCP client
+	tools      []conversation.Tool   // aggregated from all MCP servers at startup
+	toolRoutes map[string]toolCaller // tool name → owning MCP client
+	sessions   *sessionStore
 }
 
 // New creates a Server, pre-fetches tool catalogues from all MCP clients,
@@ -36,6 +37,7 @@ func New(components map[string]conversation.Conversation, mcpClients []*mcp.Clie
 		mux:        http.NewServeMux(),
 		components: components,
 		toolRoutes: make(map[string]toolCaller),
+		sessions:   newSessionStore(),
 	}
 
 	ctx := context.Background()
@@ -58,6 +60,7 @@ func New(components map[string]conversation.Conversation, mcpClients []*mcp.Clie
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/converse/{component}", s.handleConverse)
+	s.mux.HandleFunc("DELETE /v1/sessions/{id}", s.handleDeleteSession)
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 }
 
