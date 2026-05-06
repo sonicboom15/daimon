@@ -22,6 +22,7 @@ type Component struct {
 	Type     string                 `yaml:"type"`
 	Metadata map[string]string      `yaml:"metadata"`
 	Models   map[string]ModelConfig `yaml:"models"`
+	Defaults ComponentDefaults      `yaml:"defaults"`
 }
 
 // Telemetry holds OpenTelemetry configuration.
@@ -29,14 +30,35 @@ type Telemetry struct {
 	OTLPEndpoint string `yaml:"otlp_endpoint"`
 }
 
+// ComponentDefaults are inference parameter defaults applied when the request
+// doesn't supply that field. Request values always win.
+type ComponentDefaults struct {
+	Temperature      *float64 `yaml:"temperature"`
+	MaxTokens        int      `yaml:"max_tokens"`
+	TopP             *float64 `yaml:"top_p"`
+	TopK             *int64   `yaml:"top_k"`
+	Stop             []string `yaml:"stop"`
+	FrequencyPenalty *float64 `yaml:"frequency_penalty"`
+	PresencePenalty  *float64 `yaml:"presence_penalty"`
+	Seed             *int64   `yaml:"seed"`
+	System           string   `yaml:"system"`
+}
+
+// MCPServer describes an MCP server that daimon connects to as a client at startup.
+type MCPServer struct {
+	Name    string   `yaml:"name"`
+	Command []string `yaml:"command"`
+}
+
 // Config is the top-level sidecar configuration.
 type Config struct {
 	Port       int         `yaml:"port"`
 	Components []Component `yaml:"components"`
+	MCPServers []MCPServer `yaml:"mcp_servers"`
 	Telemetry  Telemetry   `yaml:"telemetry"`
 }
 
-// Load reads and parses the YAML config file at path.
+// Load reads, parses, and validates the YAML config file at path.
 // Port defaults to 3500 if not set.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -50,5 +72,28 @@ func Load(path string) (*Config, error) {
 	if cfg.Port == 0 {
 		cfg.Port = 3500
 	}
+	if err := validate(cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	return cfg, nil
+}
+
+func validate(cfg *Config) error {
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("port %d is out of range [1, 65535]", cfg.Port)
+	}
+	seen := make(map[string]bool, len(cfg.Components))
+	for _, c := range cfg.Components {
+		if c.Name == "" {
+			return fmt.Errorf("component missing name")
+		}
+		if c.Type == "" {
+			return fmt.Errorf("component %q missing type", c.Name)
+		}
+		if seen[c.Name] {
+			return fmt.Errorf("duplicate component name %q", c.Name)
+		}
+		seen[c.Name] = true
+	}
+	return nil
 }

@@ -14,12 +14,26 @@ type ModelConfig struct {
 	APIKey string
 }
 
+// ComponentDefaults holds inference parameter defaults set in config.yaml.
+// Any field left at its zero value means "no default — use the provider's own default."
+// Request-level values always override these.
+type ComponentDefaults struct {
+	Temperature      *float64
+	MaxTokens        int
+	TopP             *float64
+	TopK             *int64
+	Stop             []string
+	FrequencyPenalty *float64
+	PresencePenalty  *float64
+	Seed             *int64
+	System           string // prepended as a system message when no system message is in the request
+}
+
 // ComponentConfig is the full configuration handed to a Factory.
-// Metadata carries flat key/value pairs from the YAML; Models carries
-// per-model overrides keyed by model name.
 type ComponentConfig struct {
 	Metadata map[string]string
 	Models   map[string]ModelConfig
+	Defaults ComponentDefaults
 }
 
 // Factory creates a Conversation from a ComponentConfig.

@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
-"""Sample client for the daimon sidecar.
+"""Async streaming example using daimon.AsyncClient.
 
 Usage:
     pip install daimon-client          # from PyPI
     # pip install -e ../../sdk/python  # local dev
-    python chat.py                  # runs both components
-    python chat.py llama            # run one component
-    python chat.py gpt4o claude     # run specific components
+    python chat_async.py [component]
 """
 
+import asyncio
 import sys
 
 import daimon_client as daimon
 
 
-def main() -> None:
-    client = daimon.Client()
-    components = sys.argv[1:] or ["gpt4o", "claude"]
+async def main() -> None:
+    component = sys.argv[1] if len(sys.argv) > 1 else "llama"
     messages = [
         daimon.Message(role="user", content="What is the capital of France? Answer in one sentence."),
     ]
 
-    for component in components:
-        print(f"=== {component} ===")
-        for text in client.stream(
+    async with daimon.AsyncClient() as client:
+        print(f"=== {component} (async) ===")
+        async for text in client.stream(
             component,
             messages=messages,
             on_tool_call=lambda tc: print(f"\n[calling: {tc.name}]", flush=True),
@@ -33,4 +31,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

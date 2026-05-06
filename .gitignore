@@ -32,3 +32,17 @@ go.work.sum
 # .vscode/
 
 CLAUDE.md
+
+# wingetcreate generates manifests locally before pushing to microsoft/winget-pkgs
+manifests/
+
+# Python SDK build artifacts
+sdk/python/dist/
+sdk/python/*.egg-info/
+sdk/python/__pycache__/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.venv/
+venv/
+env/

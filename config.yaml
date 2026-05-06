@@ -7,5 +7,11 @@ components:
       base_url: http://host.docker.internal:1234/v1
       default_model: meta-llama-3.1-8b-instruct
 
+# MCP servers — daimon connects at startup and injects their tools into every
+# chat request automatically. The model can call them; daimon runs the loop.
+# mcp_servers:
+#   - name: filesystem
+#     command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+
 telemetry:
   otlp_endpoint: ""

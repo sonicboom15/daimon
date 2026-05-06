@@ -12,6 +12,16 @@ components:
     # models:
     #   o1-preview:
     #     api_key: sk-o1-specific-key
+    # Optional: inference parameter defaults (overridable per-request).
+    # defaults:
+    #   temperature: 0.7
+    #   max_tokens: 2048
+    #   top_p: 0.9
+    #   stop: ["Human:", "AI:"]
+    #   frequency_penalty: 0.0
+    #   presence_penalty: 0.0
+    #   seed: 42
+    #   system: "You are a helpful assistant."
 
   # ── Anthropic ─────────────────────────────────────────────────────────────
   - name: claude
@@ -22,6 +32,13 @@ components:
     # models:
     #   claude-haiku-4-5:
     #     api_key: sk-ant-haiku-key
+    # defaults:
+    #   temperature: 1.0
+    #   max_tokens: 4096
+    #   top_p: 0.9
+    #   top_k: 50          # Anthropic-specific
+    #   stop: ["Human:"]
+    #   system: "You are a helpful assistant."
 
   # ── llama.cpp / LM Studio (local) ─────────────────────────────────────────
   # - name: local
@@ -30,6 +47,14 @@ components:
   #     base_url: http://localhost:8080/v1   # llama.cpp default
   #     # base_url: http://localhost:1234/v1 # LM Studio default
   #     default_model: llama-3.2-3b-instruct
+
+# MCP servers — daimon connects at startup and injects their tools into every
+# chat request automatically. The model can call them; daimon runs the loop.
+# mcp_servers:
+#   - name: filesystem
+#     command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+#   - name: github
+#     command: ["npx", "-y", "@modelcontextprotocol/server-github"]
 
 telemetry:
   otlp_endpoint: ""  # e.g. "localhost:4318" for a local OTel collector
