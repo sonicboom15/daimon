@@ -15,14 +15,13 @@ jobs:
     environment: npm  # must match the environment name in the npmjs.com Trusted Publisher config
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
-          # No registry-url: npm publish --provenance handles OIDC auth natively.
-          # Adding registry-url causes setup-node to write an _authToken entry that
-          # intercepts and breaks npm's own Trusted Publishing OIDC exchange.
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
       - name: Install dependencies
         working-directory: sdk/typescript
@@ -30,7 +29,7 @@ jobs:
 
       - name: Build
         working-directory: sdk/typescript
-        run: npm run build
+        run: npm run build --if-present
 
       - name: Run tests
         working-directory: sdk/typescript
@@ -38,4 +37,4 @@ jobs:
 
       - name: Publish to npm
         working-directory: sdk/typescript
-        run: npm publish --provenance --access public
+        run: npm publish
