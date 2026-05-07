@@ -1,6 +1,6 @@
 # daimon-client
 
-TypeScript / JavaScript client for the [daimon](https://github.com/sonicboom15/daimon) AI sidecar.
+TypeScript / JavaScript client for [Daimon](https://github.com/sonicboom15/daimon) — a pluggable AI sidecar runtime.
 
 ## Installation
 
@@ -53,8 +53,6 @@ const reply = await client.chat('claude', 'What is my favourite colour?', { sess
 await client.clearSession('chat-1');
 ```
 
-Sessions are in-memory and cleared when the sidecar restarts.
-
 ## Inference parameters
 
 All sampling parameters are optional and fall back to the component's configured defaults:
@@ -68,6 +66,53 @@ const reply = await client.chat('gpt4o', 'Summarise this.', {
 });
 ```
 
+## Vector store (memory)
+
+Read and write documents in a configured vector store:
+
+```typescript
+const mem = client.memory('my-store');
+
+// Upsert a document (returns the assigned ID)
+const id = await mem.upsert('The Eiffel Tower is 330 metres tall.', {
+  id: 'eiffel',
+  metadata: { source: 'wikipedia' },
+});
+
+// Semantic search
+const results = await mem.query('tall Paris structures', 5);
+for (const r of results) {
+  console.log(r.score.toFixed(3), r.content);
+}
+
+// Delete
+await mem.delete('eiffel');
+```
+
+## Graph store
+
+Interact with a configured graph database using Cypher:
+
+```typescript
+const kg = client.graph('knowledge-graph');
+
+// Add nodes
+await kg.addNode({ id: 'alice', labels: ['Person'], props: { name: 'Alice', age: 30 } });
+await kg.addNode({ id: 'bob',   labels: ['Person'], props: { name: 'Bob' } });
+
+// Add a relationship
+await kg.addEdge('alice', 'bob', 'KNOWS', { props: { since: '2020' } });
+
+// Run a Cypher query
+const rows = await kg.cypher(
+  'MATCH (a:Person)-[:KNOWS]->(b) RETURN a.name AS from, b.name AS to',
+);
+console.log(rows); // [{ from: 'Alice', to: 'Bob' }]
+
+// Delete a node (and all its relationships)
+await kg.deleteNode('alice');
+```
+
 ## API reference
 
 ### `new Client(options?)`
@@ -79,7 +124,7 @@ const reply = await client.chat('gpt4o', 'Summarise this.', {
 
 ### `client.chat(component, prompt, options?)`
 
-Sends a request and returns the full response text as a `Promise<string>`.
+Returns the full response text as `Promise<string>`.
 
 `prompt` can be a `string` or an array of `Message`-like objects.
 
@@ -93,7 +138,28 @@ Low-level method returning an `AsyncGenerator<Chunk>` for full control over chun
 
 ### `client.clearSession(sessionId)`
 
-Deletes server-side session history. Returns `Promise<void>`. Safe to call on a session that does not exist.
+Deletes server-side session history. Returns `Promise<void>`. Safe to call on a non-existent session.
+
+### `client.memory(store)` → `MemoryStoreClient`
+
+Returns a client scoped to the named vector store.
+
+| Method | Description |
+|---|---|
+| `upsert(content, options?)` | Insert or update a document. Returns the document ID. |
+| `query(query, topK?)` | Semantic search. Returns `MemoryResult[]` sorted by descending score. |
+| `delete(id)` | Delete a document by ID. |
+
+### `client.graph(store)` → `GraphStoreClient`
+
+Returns a client scoped to the named graph store.
+
+| Method | Description |
+|---|---|
+| `addNode(options?)` | Add or update a node. Returns the node ID. |
+| `addEdge(fromId, toId, relType, options?)` | Create a directed relationship. |
+| `cypher(query, params?)` | Run a Cypher query. Returns `Record<string, unknown>[]`. |
+| `deleteNode(id)` | Delete a node and all its relationships. |
 
 ### `ChatOptions` / `StreamOptions`
 
