@@ -71,7 +71,9 @@ nav:
   - Quick Start: quickstart.md
   - Configuration: configuration.md
   - HTTP API: api.md
-  - Python SDK: sdk/python.md
+  - SDKs:
+      - Python: sdk/python.md
+      - TypeScript: sdk/typescript.md
   - Providers:
       - OpenAI: providers/openai.md
       - Anthropic: providers/anthropic.md

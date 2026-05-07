@@ -73,6 +73,7 @@ for text in client.stream(component, prompt_or_messages, **kwargs):
 | `component` | `str` | Component name from config (e.g. `"claude"`) |
 | `prompt_or_messages` | `str` \| `list[Message \| dict]` | A plain string or full message history |
 | `on_tool_call` | `Callable[[ToolCall], None]` | Called for each tool call the model makes |
+| `session_id` | `str` | Server-side session ID (see [Sessions](#sessions)) |
 | `model` | `str` | Model override |
 | `**kwargs` | | Any inference parameter (see below) |
 
@@ -114,6 +115,52 @@ for chunk in client.converse(component, messages=messages, **kwargs):
     elif chunk.type == "error":
         raise RuntimeError(chunk.error)
 ```
+
+---
+
+## Sessions
+
+Pass `session_id` to any call and daimon maintains conversation history server-side. You only need to send the new user turn — no need to replay the full history from the client.
+
+```python
+client = daimon.Client()
+
+# Turn 1 — introduce a fact
+client.chat("claude", "My name is Alice.", session_id="chat-1")
+
+# Turn 2 — server prepends the stored history automatically
+reply = client.chat("claude", "What is my name?", session_id="chat-1")
+# reply: "Your name is Alice."
+
+# Clean up when done
+client.clear_session("chat-1")
+```
+
+`session_id` works with both `chat()` and `stream()`:
+
+```python
+# stream() turn 1
+list(client.stream("claude", "My favourite colour is blue.", session_id="s1"))
+
+# chat() turn 2 — server remembers the colour
+reply = client.chat("claude", "What is my favourite colour?", session_id="s1")
+```
+
+### `clear_session(session_id)`
+
+Deletes server-side session history. Returns `None`. Safe to call on a session that does not exist.
+
+```python
+client.clear_session("chat-1")
+```
+
+Async equivalent:
+
+```python
+await async_client.clear_session("chat-1")
+```
+
+Sessions are in-memory and cleared when the sidecar restarts.
 
 ---
 

@@ -30,8 +30,10 @@ your app  ──POST /v1/converse/claude──▶  daimon  ──▶  Anthropic 
 - **Streaming-first** — responses arrive as Server-Sent Events, token by token
 - **Provider-agnostic** — OpenAI, Anthropic, and any OpenAI-compatible server (Ollama, LM Studio, llama.cpp)
 - **Inference parameter defaults** — set temperature, max_tokens, system prompt, and more per-component in YAML; override per-request at runtime
+- **Server-side sessions** — pass a `session_id` and daimon maintains conversation history for you; clients only send the new turn
 - **MCP tool calls** — configure MCP servers in YAML; daimon injects their tools into every request and drives the full agentic loop transparently
 - **Python SDK** — `pip install daimon-client` for sync and async streaming clients
+- **TypeScript SDK** — `npm install daimon-client` for Node.js and edge runtimes
 - **OpenTelemetry tracing** — structured traces per request, compatible with any OTLP collector
 
 ---

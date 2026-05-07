@@ -116,6 +116,21 @@ with daimon.Client() as client:
         print(text, end="", flush=True)
 ```
 
+**TypeScript SDK:**
+
+```bash
+npm install daimon-client
+```
+
+```typescript
+import { Client } from 'daimon-client';
+
+const client = new Client();
+for await (const text of client.stream('claude', 'What is a daimon?')) {
+  process.stdout.write(text);
+}
+```
+
 ---
 
 ## Configuration
@@ -214,6 +229,22 @@ Send a chat request and receive a streaming response over Server-Sent Events.
 
 All fields except `messages` are optional. Omitted inference parameters fall back to the component's configured defaults.
 
+**Sessions:** include `"session_id"` to have daimon maintain conversation history server-side. Only send the new user turn — the server prepends stored history automatically.
+
+```bash
+# Turn 1
+curl -sN http://127.0.0.1:3500/v1/converse/claude \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"chat-1","messages":[{"role":"user","content":"My name is Alice."}]}'
+
+# Turn 2 — server prepends the previous exchange automatically
+curl -sN http://127.0.0.1:3500/v1/converse/claude \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":"chat-1","messages":[{"role":"user","content":"What is my name?"}]}'
+```
+
+Clear a session with `DELETE /v1/sessions/{id}` (returns `204`, idempotent).
+
 **Provider support matrix:**
 
 | Parameter | OpenAI | Anthropic | llamacpp |
@@ -251,6 +282,10 @@ Each `data:` line is a JSON object:
 | `error` | `error` | terminal error; stream ends |
 
 `tool_call` events are forwarded so clients can show progress ("calling tool X…"). Daimon executes the tool automatically and loops back to the model — no client-side action needed.
+
+### `DELETE /v1/sessions/{id}`
+
+Clears server-side session history for the given ID. Returns `204 No Content`. Idempotent — deleting a session that does not exist is not an error.
 
 ### `GET /healthz`
 
@@ -298,6 +333,15 @@ messages.append(daimon.Message(role="user", content="What is my name?"))
 print(client.chat("claude", messages))
 ```
 
+**Sessions:**
+
+```python
+client.chat("claude", "My name is Alice.", session_id="chat-1")
+reply = client.chat("claude", "What is my name?", session_id="chat-1")
+# reply: "Your name is Alice."
+client.clear_session("chat-1")
+```
+
 **With inference parameters:**
 
 ```python
@@ -335,6 +379,55 @@ asyncio.run(main())
 ```
 
 Full runnable examples: [`examples/client/chat.py`](examples/client/chat.py) · [`examples/client/chat_async.py`](examples/client/chat_async.py)
+
+---
+
+## TypeScript SDK
+
+Install:
+
+```bash
+npm install daimon-client
+```
+
+**Streaming text:**
+
+```typescript
+import { Client } from 'daimon-client';
+
+const client = new Client();
+for await (const text of client.stream('claude', 'Explain recursion in one sentence.')) {
+  process.stdout.write(text);
+}
+```
+
+**Convenience: collect the full response:**
+
+```typescript
+const reply = await client.chat('gpt4o', 'What is the capital of France?');
+console.log(reply); // "The capital of France is Paris."
+```
+
+**Sessions:**
+
+```typescript
+await client.chat('claude', 'My name is Alice.', { session_id: 'chat-1' });
+const reply = await client.chat('claude', 'What is my name?', { session_id: 'chat-1' });
+// reply: "Your name is Alice."
+await client.clearSession('chat-1');
+```
+
+**With inference parameters:**
+
+```typescript
+const reply = await client.chat('gpt4o', 'Write a haiku about Go.', {
+  model:       'gpt-4o',
+  temperature: 0.9,
+  max_tokens:  64,
+});
+```
+
+Full runnable examples: [`sdk/typescript/examples/`](sdk/typescript/examples/)
 
 ---
 
@@ -416,8 +509,11 @@ make license-check
 OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-... \
   go test -tags integration -v ./internal/components/...
 
-# llamacpp — starts Ollama in Docker automatically, pulls qwen2:0.5b
+# llamacpp — starts Ollama in Docker automatically, pulls qwen2.5:1.5b
 go test -tags integration -v ./internal/components/llamacpp/
+
+# Full e2e suite (Go + Python SDK + TypeScript SDK) — requires Docker
+go test -tags integration -v -timeout 20m ./test/e2e/
 ```
 
 **Python SDK tests:**
@@ -426,6 +522,14 @@ go test -tags integration -v ./internal/components/llamacpp/
 cd sdk/python
 pip install -e ".[dev]"
 pytest tests/ -v
+```
+
+**TypeScript SDK tests:**
+
+```bash
+cd sdk/typescript
+npm install
+npm test
 ```
 
 ---
