@@ -24,6 +24,12 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i "s/^version = .*/version = \"$VERSION\"/" sdk/python/pyproject.toml
+          sed -i "s/__version__ = .*/__version__ = \"$VERSION\"/" sdk/python/daimon_client/__init__.py
+
       - name: Build wheel and sdist
         working-directory: sdk/python
         run: python -m build
