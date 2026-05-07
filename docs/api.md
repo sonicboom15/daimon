@@ -234,6 +234,200 @@ await client.clearSession('chat-1');
 
 ---
 
+## Memory Store API
+
+Vector / document stores are exposed at `/v1/memory/{store}`. The `{store}` segment must match a component `name` declared in your config.
+
+### `PUT /v1/memory/{store}/{id}` — Upsert with caller-supplied ID
+
+```bash
+curl -X PUT http://127.0.0.1:3500/v1/memory/docs/doc1 \
+  -H "Content-Type: application/json" \
+  -d '{"content": "The Eiffel Tower is 330 metres tall.", "metadata": {"source": "wikipedia"}}'
+# {"id":"doc1"}
+```
+
+### `POST /v1/memory/{store}` — Upsert, server assigns ID
+
+```bash
+curl -X POST http://127.0.0.1:3500/v1/memory/docs \
+  -H "Content-Type: application/json" \
+  -d '{"content": "The Seine is the main river of Paris."}'
+# {"id":"a1b2c3d4-..."}
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `content` | string | **yes** | Document text. |
+| `metadata` | object | no | Arbitrary string key/value pairs stored alongside the document. |
+
+### `POST /v1/memory/{store}/query` — Semantic search
+
+```bash
+curl -X POST http://127.0.0.1:3500/v1/memory/docs/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "tall structures in Paris", "top_k": 3}'
+```
+
+```json
+{
+  "results": [
+    { "id": "doc1", "content": "The Eiffel Tower is 330 metres tall.", "score": 0.91, "metadata": {"source": "wikipedia"} }
+  ]
+}
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | **yes** | Search text. |
+| `top_k` | int | no | Maximum results to return (default: 5). |
+
+### `DELETE /v1/memory/{store}/{id}` — Delete a document
+
+Returns `204 No Content`. Idempotent.
+
+```bash
+curl -X DELETE http://127.0.0.1:3500/v1/memory/docs/doc1
+```
+
+!!! note
+    Documents cannot be named `"query"`. The Go 1.22 router gives the literal path segment `/query` priority over `{id}` for the same method.
+
+**Status codes for all memory endpoints:**
+
+| Code | Meaning |
+|---|---|
+| `200 OK` | Success (upsert / query). |
+| `204 No Content` | Success (delete). |
+| `400 Bad Request` | Malformed JSON body. |
+| `404 Not Found` | Unknown store name. |
+| `500 Internal Server Error` | Backend error. |
+
+**Python SDK:**
+
+```python
+store = client.memory("docs")
+id = store.upsert("The Eiffel Tower is 330 metres tall.", id="doc1", metadata={"source": "wiki"})
+results = store.query("tall Paris structures", top_k=3)
+# results[0].id, results[0].content, results[0].score, results[0].metadata
+store.delete("doc1")
+```
+
+**TypeScript SDK:**
+
+```typescript
+const store = client.memory('docs');
+const id = await store.upsert('The Eiffel Tower is 330 metres tall.', { id: 'doc1', metadata: { source: 'wiki' } });
+const results = await store.query('tall Paris structures', 3);
+// results[0].id, results[0].content, results[0].score, results[0].metadata
+await store.delete('doc1');
+```
+
+---
+
+## Graph Store API
+
+Graph stores are exposed at `/v1/graph/{store}`. The `{store}` segment must match a component `name` declared in your config.
+
+### `PUT /v1/graph/{store}/nodes/{id}` — Add or update a node
+
+```bash
+curl -X PUT http://127.0.0.1:3500/v1/graph/kg/nodes/alice \
+  -H "Content-Type: application/json" \
+  -d '{"labels": ["Person"], "props": {"name": "Alice", "age": 30}}'
+# {"id":"alice"}
+```
+
+### `POST /v1/graph/{store}/nodes` — Add a node, server assigns ID
+
+```bash
+curl -X POST http://127.0.0.1:3500/v1/graph/kg/nodes \
+  -H "Content-Type: application/json" \
+  -d '{"labels": ["Document"], "props": {"title": "Intro to Graphs"}}'
+# {"id":"a1b2c3d4-..."}
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `labels` | array of strings | no | Node labels (e.g. `["Person", "Employee"]`). |
+| `props` | object | no | Arbitrary node properties. |
+
+### `POST /v1/graph/{store}/edges` — Add a directed edge
+
+```bash
+curl -X POST http://127.0.0.1:3500/v1/graph/kg/edges \
+  -H "Content-Type: application/json" \
+  -d '{"from": "alice", "to": "bob", "type": "KNOWS", "props": {"since": "2020"}}'
+```
+
+Returns `204 No Content`.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `from` | string | **yes** | Source node ID. |
+| `to` | string | **yes** | Target node ID. |
+| `type` | string | **yes** | Relationship type (must match `^[A-Za-z_][A-Za-z0-9_]*$`). |
+| `props` | object | no | Arbitrary relationship properties. |
+
+### `POST /v1/graph/{store}/cypher` — Run a Cypher query
+
+```bash
+curl -X POST http://127.0.0.1:3500/v1/graph/kg/cypher \
+  -H "Content-Type: application/json" \
+  -d '{"query": "MATCH (a:Person)-[:KNOWS]->(b) RETURN a.name, b.name", "params": {}}'
+```
+
+```json
+{ "rows": [{ "a.name": "Alice", "b.name": "Bob" }] }
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | **yes** | Cypher query string. |
+| `params` | object | no | Named parameters (`$name` syntax in the query). |
+
+### `DELETE /v1/graph/{store}/nodes/{id}` — Delete a node
+
+Deletes the node and all its relationships. Returns `204 No Content`. Idempotent.
+
+```bash
+curl -X DELETE http://127.0.0.1:3500/v1/graph/kg/nodes/alice
+```
+
+**Status codes for all graph endpoints:** same as memory store endpoints above.
+
+**Python SDK:**
+
+```python
+graph = client.graph("kg")
+graph.add_node(id="alice", labels=["Person"], props={"name": "Alice"})
+graph.add_edge("alice", "bob", "KNOWS", props={"since": "2020"})
+rows = graph.cypher("MATCH (a)-[:KNOWS]->(b) RETURN a.name, b.name")
+graph.delete_node("alice")
+```
+
+**TypeScript SDK:**
+
+```typescript
+const graph = client.graph('kg');
+await graph.addNode({ id: 'alice', labels: ['Person'], props: { name: 'Alice' } });
+await graph.addEdge('alice', 'bob', 'KNOWS', { props: { since: '2020' } });
+const rows = await graph.cypher('MATCH (a)-[:KNOWS]->(b) RETURN a.name, b.name');
+await graph.deleteNode('alice');
+```
+
+---
+
 ## `DELETE /v1/sessions/{id}`
 
 Clears the stored conversation history for the given session ID. Returns `204 No Content`. Idempotent — deleting a session that does not exist is not an error.

@@ -1,6 +1,112 @@
 port: 3500
 
+# All component types (LLMs, vector stores, graph stores, embedders, session stores)
+# live under `components:`. The sidecar auto-detects the type by trying each registry
+# in order: embedding → session → vector → graph → LLM.
+#
+# Declaration order matters: declare embedders before vector stores that use them,
+# and vector stores before LLM components that reference them via memory_store:.
+
 components:
+
+  # ── Embedder ──────────────────────────────────────────────────────────────
+  # Declare before any vector store that needs embeddings.
+  # Works with OpenAI and any OpenAI-compatible endpoint (Ollama, LM Studio, etc.).
+  # - name: embedder
+  #   type: embedding/openai
+  #   metadata:
+  #     base_url: https://api.openai.com   # or http://localhost:11434/v1 for Ollama
+  #     api_key: sk-...                    # or set OPENAI_API_KEY env var
+  #     model: text-embedding-3-small
+  #     dimensions: "1536"
+
+  # ── Session store (optional) ───────────────────────────────────────────────
+  # Defaults to in-memory if omitted (history lost on restart).
+  # At most one session store may be configured.
+  # - name: session-store
+  #   type: session/redis
+  #   metadata:
+  #     addr: localhost:6379
+  #     ttl: "24h"
+  #
+  # - name: session-store
+  #   type: session/postgres
+  #   metadata:
+  #     dsn: postgres://user:pass@localhost:5432/mydb
+  #     table: daimon_sessions
+  #     ttl: "24h"
+
+  # ── Vector / Document Stores ───────────────────────────────────────────────
+  # Exposed at /v1/memory/{name}/query  etc.
+  # The LLM also gets auto-generated search/upsert tools for each store.
+
+  # In-memory BM25 (no external service — dev/testing only):
+  # - name: mem
+  #   type: inmemory
+
+  # Chroma (handles embeddings server-side):
+  # - name: chroma-docs
+  #   type: chroma
+  #   metadata:
+  #     base_url: http://localhost:8000
+  #     collection: daimon
+  #     create_if_missing: "true"
+
+  # Qdrant (needs embedding_url for semantic search):
+  # - name: qdrant-docs
+  #   type: qdrant
+  #   metadata:
+  #     base_url: http://localhost:6333
+  #     collection: daimon
+  #     create_if_missing: "true"
+  #     embedding_url: http://localhost:11434/v1   # Ollama embeddings
+  #     dimensions: "768"
+  #     # api_key: ...   # Qdrant Cloud
+
+  # Redis Stack (requires redis/redis-stack image for FT commands):
+  # - name: redis-docs
+  #   type: redis
+  #   metadata:
+  #     addr: localhost:6379
+  #     index: daimon-docs
+  #     embedding_url: http://localhost:11434/v1
+  #     dimensions: "768"
+
+  # pgvector (PostgreSQL + pgvector extension):
+  # - name: pg-docs
+  #   type: pgvector
+  #   metadata:
+  #     dsn: postgres://user:pass@localhost:5432/mydb
+  #     table: daimon_documents
+  #     embedding_url: http://localhost:11434/v1
+  #     dimensions: "768"
+
+  # ── Graph Stores ───────────────────────────────────────────────────────────
+  # Exposed at /v1/graph/{name}/cypher  etc.
+  # The LLM also gets auto-generated cypher/add_node/add_edge tools for each store.
+
+  # Neo4j (Bolt default; use protocol: "http" for HTTP transport):
+  # - name: knowledge-graph
+  #   type: neo4j
+  #   metadata:
+  #     bolt_url: bolt://localhost:7687
+  #     protocol: bolt      # "bolt" (default) or "http"
+  #     http_url: http://localhost:7474
+  #     database: neo4j
+  #     username: neo4j
+  #     password: secret
+
+  # Memgraph (same Bolt driver as Neo4j; different HTTP endpoint):
+  # - name: memgraph-graph
+  #   type: memgraph
+  #   metadata:
+  #     bolt_url: bolt://localhost:7687
+  #     protocol: bolt
+  #     # username / password optional
+
+  # ── LLM Components ─────────────────────────────────────────────────────────
+  # Use memory_store: to enable transparent RAG enrichment from a vector store.
+  # The named store must be declared above this component.
 
   # ── OpenAI ────────────────────────────────────────────────────────────────
   - name: gpt4o
@@ -8,11 +114,10 @@ components:
     metadata:
       default_model: gpt-4o
       # api_key: sk-...  # or set OPENAI_API_KEY env var
-    # Optional: give specific models their own API key.
+    # memory_store: chroma-docs   # optional: enable RAG from a vector store
     # models:
     #   o1-preview:
     #     api_key: sk-o1-specific-key
-    # Optional: inference parameter defaults (overridable per-request).
     # defaults:
     #   temperature: 0.7
     #   max_tokens: 2048
@@ -29,6 +134,7 @@ components:
     metadata:
       default_model: claude-opus-4-7
       # api_key: sk-ant-...  # or set ANTHROPIC_API_KEY env var
+    # memory_store: chroma-docs   # optional: enable RAG from a vector store
     # models:
     #   claude-haiku-4-5:
     #     api_key: sk-ant-haiku-key
@@ -40,16 +146,17 @@ components:
     #   stop: ["Human:"]
     #   system: "You are a helpful assistant."
 
-  # ── llama.cpp / LM Studio (local) ─────────────────────────────────────────
+  # ── llama.cpp / LM Studio / Ollama (local) ────────────────────────────────
   # - name: local
   #   type: llamacpp
   #   metadata:
   #     base_url: http://localhost:8080/v1   # llama.cpp default
-  #     # base_url: http://localhost:1234/v1 # LM Studio default
+  #     # base_url: http://localhost:11434/v1 # Ollama default
+  #     # base_url: http://localhost:1234/v1  # LM Studio default
   #     default_model: llama-3.2-3b-instruct
 
 # MCP servers — daimon connects at startup and injects their tools into every
-# chat request automatically. The model can call them; daimon runs the loop.
+# chat request automatically. The model can call them; daimon drives the loop.
 # mcp_servers:
 #   - name: filesystem
 #     command: ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]

@@ -8,9 +8,9 @@
 [![License](https://img.shields.io/github/license/sonicboom15/daimon)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-sonicboom15.github.io%2Fdaimon-blue)](https://sonicboom15.github.io/daimon/)
 
-Daimon is a local sidecar process that gives your application a single, stable HTTP interface to any LLM. Swap providers, rotate keys, add tracing, or wire up MCP tools — without touching your app code.
+Daimon is a local sidecar process that gives your application a single, stable HTTP interface to any LLM. Swap providers, rotate keys, add tracing, wire up MCP tools, query vector stores, or traverse knowledge graphs — without touching your app code.
 
-Inspired by [Dapr's](https://dapr.io) component model, adapted for AI-native primitives: streaming responses, pluggable providers, MCP tool calls, and (eventually) memory and agent orchestration.
+Inspired by [Dapr's](https://dapr.io) component model, adapted for AI-native primitives: streaming responses, pluggable providers, MCP tool calls, vector/graph stores, and persistent sessions.
 
 ---
 
@@ -19,9 +19,14 @@ Inspired by [Dapr's](https://dapr.io) component model, adapted for AI-native pri
 ```
 your app  ──POST /v1/converse/claude──▶  daimon  ──▶  Anthropic API
           ◀── text/event-stream ────────────────────────────────────
-                                            ▼
+                                            │
                                      MCP tool server(s)
                                    (filesystem, GitHub, ...)
+                                            │
+                                   vector stores (Chroma, Qdrant,
+                                     Redis, pgvector, in-memory)
+                                            │
+                                   graph stores (Neo4j, Memgraph)
 ```
 
 Daimon runs on `localhost:3500`. Your app speaks plain HTTP + Server-Sent Events. The provider, model, credentials, and tool servers all live in a YAML config — not in your code.
@@ -145,12 +150,56 @@ for await (const text of client.stream('claude', 'What is a daimon?')) {
 port: 3500
 
 components:
+
+  # ── Embedder (declare before vector stores) ──────────────────────────────
+  # - name: embedder
+  #   type: embedding/openai
+  #   metadata:
+  #     base_url: http://localhost:11434/v1   # Ollama; omit for OpenAI
+  #     model: nomic-embed-text
+  #     dimensions: "768"
+
+  # ── Session store (optional; defaults to in-memory) ──────────────────────
+  # - name: sessions
+  #   type: session/redis
+  #   metadata:
+  #     addr: localhost:6379
+  #     ttl: "24h"
+
+  # ── Vector / document stores ─────────────────────────────────────────────
+  # - name: docs
+  #   type: inmemory          # BM25 lexical, no deps — dev/testing only
+  #
+  # - name: chroma-docs
+  #   type: chroma
+  #   metadata:
+  #     base_url: http://localhost:8000
+  #     collection: daimon
+  #     create_if_missing: "true"
+  #
+  # - name: qdrant-docs
+  #   type: qdrant
+  #   metadata:
+  #     base_url: http://localhost:6333
+  #     collection: daimon
+  #     embedder: embedder
+  #     create_if_missing: "true"
+
+  # ── Graph stores ──────────────────────────────────────────────────────────
+  # - name: kg
+  #   type: neo4j
+  #   metadata:
+  #     bolt_url: bolt://localhost:7687
+  #     username: neo4j
+  #     password: secret
+
+  # ── LLM components ────────────────────────────────────────────────────────
   - name: claude
     type: anthropic
+    # memory_store: chroma-docs   # enable transparent RAG from a vector store
     metadata:
       default_model: claude-opus-4-7
       # api_key: sk-ant-...  # or set ANTHROPIC_API_KEY
-    # Per-request defaults (all optional — request values always win):
     # defaults:
     #   temperature: 1.0
     #   max_tokens: 4096
@@ -191,7 +240,7 @@ telemetry:
   otlp_endpoint: ""   # e.g. "localhost:4318" — leave empty to disable
 ```
 
-Each component has a **name** (used in the request URL) and a **type** (selects the provider). Inference parameters set under `defaults:` are used when the request doesn't supply them — request values always win.
+All component types — LLMs, embedders, session stores, vector stores, and graph stores — live under `components:`. Declaration order matters: embedders before vector stores, vector stores before LLMs that reference them via `memory_store:`. See [examples/config.yaml](examples/config.yaml) for the fully-documented reference.
 
 ---
 
@@ -459,6 +508,75 @@ No client-side changes required.
 
 ---
 
+## Memory & Graph Stores
+
+Daimon ships with five vector stores and two graph stores, all configured the same way — as `components:` entries.
+
+### Vector stores
+
+| Type | External service | Embedding |
+|---|---|---|
+| `inmemory` | None | BM25 (lexical) |
+| `chroma` | Chroma | Server-side |
+| `qdrant` | Qdrant | Configurable endpoint |
+| `redis` | Redis Stack | Configurable endpoint |
+| `pgvector` | PostgreSQL + pgvector | Configurable endpoint |
+
+**HTTP API:** `PUT /v1/memory/{store}/{id}` · `POST /v1/memory/{store}` · `POST /v1/memory/{store}/query` · `DELETE /v1/memory/{store}/{id}`
+
+**Python SDK:**
+
+```python
+store = client.memory("docs")
+store.upsert("The Eiffel Tower is 330 m tall.", id="doc1", metadata={"src": "wiki"})
+results = store.query("tall Paris structures", top_k=3)
+# results[0].id, .content, .score, .metadata
+store.delete("doc1")
+```
+
+**TypeScript SDK:**
+
+```typescript
+const store = client.memory('docs');
+await store.upsert('The Eiffel Tower is 330 m tall.', { id: 'doc1', metadata: { src: 'wiki' } });
+const results = await store.query('tall Paris structures', 3);
+await store.delete('doc1');
+```
+
+### Transparent RAG
+
+Add `memory_store: <name>` to any LLM component and daimon automatically queries the store before every chat request, injecting the top results as a system message:
+
+```yaml
+- name: claude
+  type: anthropic
+  memory_store: chroma-docs
+```
+
+No client code changes needed — the enrichment happens inside the sidecar.
+
+### Graph stores
+
+| Type | External service | Protocol |
+|---|---|---|
+| `neo4j` | Neo4j | Bolt (default) / HTTP |
+| `memgraph` | Memgraph | Bolt (default) / HTTP |
+
+**HTTP API:** `PUT /v1/graph/{store}/nodes/{id}` · `POST /v1/graph/{store}/edges` · `POST /v1/graph/{store}/cypher` · `DELETE /v1/graph/{store}/nodes/{id}`
+
+**Python SDK:**
+
+```python
+graph = client.graph("kg")
+graph.add_node(id="alice", labels=["Person"], props={"name": "Alice"})
+graph.add_edge("alice", "bob", "KNOWS")
+rows = graph.cypher("MATCH (a)-[:KNOWS]->(b) RETURN a.name, b.name")
+```
+
+Both stores also generate `{name}_cypher`, `{name}_add_node`, and `{name}_add_edge` tools that the LLM can call directly via the agentic loop.
+
+---
+
 ## Supported providers
 
 | Type | Env var | Default model |
@@ -473,11 +591,11 @@ No client-side changes required.
 
 ## Adding a provider
 
-1. Create `internal/components/<name>/<name>.go`.
+1. Create `internal/components/llm/<name>/<name>.go`.
 2. Implement `conversation.Conversation`:
    ```go
    type Component struct { /* ... */ }
-   
+
    func (c *Component) Chat(ctx context.Context, req conversation.Request) (<-chan conversation.Chunk, error) {
        // stream chunks through the returned channel
    }
@@ -493,7 +611,7 @@ No client-side changes required.
 4. Blank-import the package from `cmd/daimon/serve.go` and `cmd/daimon/run.go`.
 5. Add a worked example to `examples/config.yaml`.
 
-No changes to the server, config loader, or any other package.
+No changes to the server, config loader, or any other package. See [Development](https://sonicboom15.github.io/daimon/development/) for adding vector stores or graph stores.
 
 ---
 
@@ -516,7 +634,7 @@ OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-... \
   go test -tags integration -v ./internal/components/...
 
 # llamacpp — starts Ollama in Docker automatically, pulls qwen2.5:1.5b
-go test -tags integration -v ./internal/components/llamacpp/
+go test -tags integration -v ./internal/components/llm/llamacpp/
 
 # Full e2e suite (Go + Python SDK + TypeScript SDK) — requires Docker
 go test -tags integration -v -timeout 20m ./test/e2e/
@@ -542,10 +660,11 @@ npm test
 
 ## Roadmap
 
-- **Memory / vector stores** as first-class components
-- **Agent orchestration** primitives (multi-step, branching)
+- **AI-native memory systems** (Zep, Mem0) — session-aware, auto-summarising, distinct from vector stores
+- **Middleware pipeline** — per-request hooks for moderation, PII redaction, semantic cache, rate limiting
+- **Multi-agent routing** — fallback chains, load balancing across LLM components
 - **Metrics** alongside traces (OTel)
-- **Authentication** and rate limiting
+- **Authentication** and per-client rate limiting
 
 Explicitly out of scope for now: gRPC, external plugin loading, pub/sub.
 

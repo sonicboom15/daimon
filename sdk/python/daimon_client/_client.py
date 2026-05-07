@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from ._stores import GraphStoreClient, MemoryStoreClient
 from ._types import Chunk, DaimonError, Message, Tool, ToolCall
 
 
@@ -137,6 +138,14 @@ class Client:
         """Delete the stored conversation history for the given session ID."""
         resp = self._client().delete(f"{self._base}/v1/sessions/{session_id}")
         resp.raise_for_status()
+
+    def memory(self, store: str) -> MemoryStoreClient:
+        """Return a client scoped to the named vector / document store."""
+        return MemoryStoreClient(self._base, store, self._client)
+
+    def graph(self, store: str) -> GraphStoreClient:
+        """Return a client scoped to the named graph store."""
+        return GraphStoreClient(self._base, store, self._client)
 
 
 def _build_body(

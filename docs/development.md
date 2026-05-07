@@ -51,11 +51,11 @@ OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-... \
   go test -tags integration -v ./internal/components/...
 
 # llamacpp only — starts Ollama in Docker, pulls qwen2.5:1.5b
-go test -tags integration -v ./internal/components/llamacpp/
+go test -tags integration -v ./internal/components/llm/llamacpp/
 
 # Use a different model (e.g. one that supports tool calls)
 DAIMON_OLLAMA_MODEL=llama3.2:1b \
-  go test -tags integration -v ./internal/components/llamacpp/
+  go test -tags integration -v ./internal/components/llm/llamacpp/
 ```
 
 The llamacpp test skips gracefully if Docker is not available.
@@ -68,6 +68,14 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
+### TypeScript SDK tests
+
+```bash
+cd sdk/typescript
+npm install
+npm test
+```
+
 ## Project structure
 
 ```
@@ -76,15 +84,37 @@ internal/
   config/                # YAML config loader + validation
   server/                # HTTP routing, SSE handler, agentic loop
   conversation/          # Conversation interface, types, registry
+  embedding/             # Embedder interface and registry
+  session/               # SessionStore interface, registry, in-memory default
+  memory/                # MemoryStore + GraphStore interfaces and registries
   components/
-    openai/              # OpenAI provider
-    anthropic/           # Anthropic provider
-    llamacpp/            # OpenAI-compatible local server provider
+    llm/
+      openai/            # OpenAI provider
+      anthropic/         # Anthropic provider
+      llamacpp/          # OpenAI-compatible local server provider
+    embedding/
+      openai/            # OpenAI-compatible embeddings
+    session/
+      redis/             # Redis-backed session store
+      postgres/          # Postgres-backed session store
+    vector/
+      inmemory/          # BM25 in-process store (no external deps)
+      chroma/            # Chroma HTTP API
+      qdrant/            # Qdrant REST API
+      redis/             # Redis Stack (FT.SEARCH)
+      pgvector/          # PostgreSQL + pgvector
+    graph/
+      neo4j/             # Neo4j (Bolt default, HTTP fallback)
+      memgraph/          # Memgraph (Bolt default, HTTP fallback)
   mcp/                   # MCP stdio client (JSON-RPC 2.0)
   telemetry/             # OpenTelemetry setup
-sdk/python/              # daimon-client Python package
-  daimon_client/
-  tests/
+sdk/
+  python/                # daimon-client Python package
+    daimon_client/
+    tests/
+  typescript/            # daimon-client TypeScript package
+    src/
+    tests/
 examples/
   config.yaml            # Sample config with all options documented
   client/                # Runnable example scripts
@@ -94,7 +124,7 @@ docs/                    # This documentation site (MkDocs)
 
 ## Adding a provider
 
-1. Create `internal/components/<name>/<name>.go`.
+1. Create `internal/components/llm/<name>/<name>.go`.
 2. Implement the `conversation.Conversation` interface:
    ```go
    func (c *Component) Chat(ctx context.Context, req conversation.Request) (<-chan conversation.Chunk, error) {
@@ -117,7 +147,7 @@ docs/                    # This documentation site (MkDocs)
    ```
 4. Add blank imports to `cmd/daimon/serve.go` and `cmd/daimon/run.go`:
    ```go
-   _ "github.com/sonicboom15/daimon/internal/components/<name>"
+   _ "github.com/sonicboom15/daimon/internal/components/llm/<name>"
    ```
 5. Add an entry to `examples/config.yaml`.
 6. Write an integration test in `<name>_integration_test.go` (tagged `//go:build integration`).
@@ -125,6 +155,29 @@ docs/                    # This documentation site (MkDocs)
 !!! important "Architecture rules"
     - Components must not import `internal/server` or `internal/config` — only `internal/conversation`.
     - Helper functions (`first`, `firstSlice`, `effectiveSystem`) are intentionally duplicated per-component to keep them self-contained. Do not move them to a shared package.
+
+## Adding a vector store
+
+1. Create `internal/components/vector/<name>/<name>.go`.
+2. Implement `memory.MemoryStore` (`Upsert`, `Query`, `Delete`).
+3. Register in `init()`:
+   ```go
+   func init() {
+       memory.Register("<name>", func(cfg memory.StoreConfig) (memory.MemoryStore, error) {
+           return New(cfg)
+       })
+   }
+   ```
+4. Add blank import to `cmd/daimon/serve.go` and `run.go`.
+5. Write tests using `httptest.NewServer` (HTTP stores) or `miniredis` (Redis).
+
+## Adding a graph store
+
+1. Create `internal/components/graph/<name>/<name>.go`.
+2. Implement `memory.GraphStore` (`AddNode`, `AddEdge`, `Cypher`, `Delete`).
+3. Register in `init()` using `memory.RegisterGraph(...)`.
+4. Add blank import to `cmd/daimon/serve.go` and `run.go`.
+5. Write tests using `httptest.NewServer`.
 
 ## Docs site
 

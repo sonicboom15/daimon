@@ -31,9 +31,10 @@ type ComponentDefaults struct {
 
 // ComponentConfig is the full configuration handed to a Factory.
 type ComponentConfig struct {
-	Metadata map[string]string
-	Models   map[string]ModelConfig
-	Defaults ComponentDefaults
+	Metadata    map[string]string
+	Models      map[string]ModelConfig
+	Defaults    ComponentDefaults
+	MemoryStore string // name of the vector store component for RAG enrichment (resolved by server)
 }
 
 // Factory creates a Conversation from a ComponentConfig.

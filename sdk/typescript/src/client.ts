@@ -1,3 +1,4 @@
+import { GraphStoreClient, MemoryStoreClient } from './stores.js';
 import { Chunk, DaimonError, Message, Tool, ToolCall } from './types.js';
 
 export type MessageLike = Message | Record<string, unknown>;
@@ -187,5 +188,13 @@ export class Client {
     if (!response.ok) {
       throw new DaimonError(`HTTP ${response.status}: ${await response.text()}`);
     }
+  }
+
+  memory(store: string): MemoryStoreClient {
+    return new MemoryStoreClient(this.baseUrl, store, this.timeout);
+  }
+
+  graph(store: string): GraphStoreClient {
+    return new GraphStoreClient(this.baseUrl, store, this.timeout);
   }
 }

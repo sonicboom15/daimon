@@ -9,6 +9,26 @@ class DaimonError(Exception):
 
 
 @dataclass
+class MemoryResult:
+    """A single result returned by a vector store query."""
+
+    id: str
+    content: str
+    metadata: dict[str, str] = field(default_factory=dict)
+    score: float = 0.0
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> "MemoryResult":
+        meta = d.get("metadata") or {}
+        return cls(
+            id=d.get("id", ""),
+            content=d.get("content", ""),
+            metadata={str(k): str(v) for k, v in meta.items()},
+            score=float(d.get("score", 0.0)),
+        )
+
+
+@dataclass
 class ToolCall:
     id: str
     name: str

@@ -16,6 +16,29 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	// LLM providers.
+	_ "github.com/sonicboom15/daimon/internal/components/llm/anthropic"
+	_ "github.com/sonicboom15/daimon/internal/components/llm/llamacpp"
+	_ "github.com/sonicboom15/daimon/internal/components/llm/openai"
+
+	// Embedding components.
+	_ "github.com/sonicboom15/daimon/internal/components/embedding/openai"
+
+	// Session store components.
+	_ "github.com/sonicboom15/daimon/internal/components/session/postgres"
+	_ "github.com/sonicboom15/daimon/internal/components/session/redis"
+
+	// Vector store components.
+	_ "github.com/sonicboom15/daimon/internal/components/vector/chroma"
+	_ "github.com/sonicboom15/daimon/internal/components/vector/inmemory"
+	_ "github.com/sonicboom15/daimon/internal/components/vector/pgvector"
+	_ "github.com/sonicboom15/daimon/internal/components/vector/qdrant"
+	_ "github.com/sonicboom15/daimon/internal/components/vector/redis"
+
+	// Graph store components.
+	_ "github.com/sonicboom15/daimon/internal/components/graph/memgraph"
+	_ "github.com/sonicboom15/daimon/internal/components/graph/neo4j"
 )
 
 var runCmd = &cobra.Command{

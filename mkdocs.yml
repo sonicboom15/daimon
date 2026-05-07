@@ -78,6 +78,18 @@ nav:
   - SDKs:
       - Python: sdk/python.md
       - TypeScript: sdk/typescript.md
+  - Stores:
+      - Overview: stores/index.md
+      - RAG Enrichment: rag.md
+      - Vector Stores:
+          - In-Memory (BM25): stores/vector/inmemory.md
+          - Chroma: stores/vector/chroma.md
+          - Qdrant: stores/vector/qdrant.md
+          - Redis Stack: stores/vector/redis.md
+          - pgvector: stores/vector/pgvector.md
+      - Graph Stores:
+          - Neo4j: stores/graph/neo4j.md
+          - Memgraph: stores/graph/memgraph.md
   - Providers:
       - OpenAI: providers/openai.md
       - Anthropic: providers/anthropic.md

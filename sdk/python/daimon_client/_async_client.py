@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from ._client import _build_body, _normalise_input
+from ._stores import AsyncGraphStoreClient, AsyncMemoryStoreClient
 from ._types import Chunk, DaimonError, Message, Tool, ToolCall
 
 
@@ -122,3 +123,11 @@ class AsyncClient:
         """Delete the stored conversation history for the given session ID."""
         resp = await self._client().delete(f"{self._base}/v1/sessions/{session_id}")
         resp.raise_for_status()
+
+    def memory(self, store: str) -> AsyncMemoryStoreClient:
+        """Return an async client scoped to the named vector / document store."""
+        return AsyncMemoryStoreClient(self._base, store, self._client)
+
+    def graph(self, store: str) -> AsyncGraphStoreClient:
+        """Return an async client scoped to the named graph store."""
+        return AsyncGraphStoreClient(self._base, store, self._client)

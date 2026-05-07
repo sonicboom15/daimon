@@ -7,7 +7,7 @@
 // Ollama container. It requires Docker to be running; if Docker is unavailable
 // the tests are skipped gracefully (exit 0, not exit 1).
 //
-// The first run downloads the model (~350 MB for qwen2:0.5b). Subsequent runs
+// The first run downloads the model (~350 MB for qwen2.5:1.5b). Subsequent runs
 // use Docker's layer cache.
 //
 // Run all e2e tests (Go + Python SDK + TypeScript SDK):
@@ -40,13 +40,20 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	// Blank import registers the llamacpp factory in the conversation registry.
-	_ "github.com/sonicboom15/daimon/internal/components/llamacpp"
+	// Blank imports register component factories in their respective registries.
+	_ "github.com/sonicboom15/daimon/internal/components/llm/llamacpp"
+	_ "github.com/sonicboom15/daimon/internal/components/vector/inmemory"
+
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/memory"
 	"github.com/sonicboom15/daimon/internal/server"
+	"github.com/sonicboom15/daimon/internal/session"
 )
 
-const component = "llama"
+const (
+	component = "llama"
+	memStore  = "mem" // inmemory vector store name used in all memory tests
+)
 
 var (
 	baseURL     string
@@ -103,6 +110,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// Inmemory vector store — no external service needed.
+	ms, err := memory.New("inmemory", memory.StoreConfig{Metadata: map[string]string{}})
+	if err != nil {
+		slog.Error("creating inmemory store", "err", err)
+		container.Terminate(context.Background()) //nolint:errcheck
+		os.Exit(1)
+	}
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		slog.Error("net.Listen", "err", err)
@@ -111,7 +126,14 @@ func TestMain(m *testing.M) {
 	}
 
 	daimonSrv := &http.Server{
-		Handler: server.New(map[string]conversation.Conversation{component: comp}, nil),
+		Handler: server.New(
+			map[string]conversation.Conversation{component: comp},
+			nil, // no MCP servers
+			map[string]memory.MemoryStore{memStore: ms},
+			map[string]memory.GraphStore{},
+			map[string]string{}, // no RAG wiring
+			session.NewInMemory(),
+		),
 	}
 	go daimonSrv.Serve(ln) //nolint:errcheck
 
@@ -125,7 +147,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// ── Go-level smoke tests ──────────────────────────────────────────────────────
+// ── Healthz ───────────────────────────────────────────────────────────────────
 
 func TestE2E_Healthz(t *testing.T) {
 	resp, err := http.Get(baseURL + "/healthz")
@@ -142,6 +164,8 @@ func TestE2E_Healthz(t *testing.T) {
 		t.Errorf("body = %q, want \"ok\"", body)
 	}
 }
+
+// ── LLM / converse ────────────────────────────────────────────────────────────
 
 func TestE2E_BasicConverse(t *testing.T) {
 	text := converseText(t, map[string]any{
@@ -191,6 +215,134 @@ func TestE2E_DeleteSession(t *testing.T) {
 	deleteSession(t, sessionID)
 }
 
+// ── Memory store (inmemory, BM25) ─────────────────────────────────────────────
+
+func TestE2E_MemoryUpsertWithID(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"content":  "The Eiffel Tower is 330 metres tall.",
+		"metadata": map[string]string{"src": "wiki"},
+	})
+	resp, err := doRequest(t, http.MethodPut, baseURL+"/v1/memory/"+memStore+"/tower", body)
+	if err != nil {
+		t.Fatalf("PUT memory: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, b)
+	}
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result["id"] != "tower" {
+		t.Errorf("id = %q, want tower", result["id"])
+	}
+}
+
+func TestE2E_MemoryUpsertServerAssignsID(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"content": "The Seine is the main river of Paris.",
+	})
+	resp, err := doRequest(t, http.MethodPost, baseURL+"/v1/memory/"+memStore, body)
+	if err != nil {
+		t.Fatalf("POST memory: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, b)
+	}
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result["id"] == "" {
+		t.Error("expected non-empty assigned id")
+	}
+	t.Logf("server-assigned id = %q", result["id"])
+}
+
+func TestE2E_MemoryQuery(t *testing.T) {
+	// Seed a known document.
+	seed, _ := json.Marshal(map[string]any{"content": "Paris is the capital of France."})
+	resp, err := doRequest(t, http.MethodPut, baseURL+"/v1/memory/"+memStore+"/paris-capital", seed)
+	if err != nil {
+		t.Fatalf("upsert seed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Query for it.
+	qbody, _ := json.Marshal(map[string]any{"query": "capital of France", "top_k": 5})
+	qresp, err := doRequest(t, http.MethodPost, baseURL+"/v1/memory/"+memStore+"/query", qbody)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer qresp.Body.Close()
+
+	if qresp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(qresp.Body)
+		t.Fatalf("query status = %d, body = %s", qresp.StatusCode, b)
+	}
+
+	var result struct {
+		Results []struct {
+			ID      string  `json:"id"`
+			Content string  `json:"content"`
+			Score   float64 `json:"score"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(qresp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode query response: %v", err)
+	}
+	if len(result.Results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+
+	found := false
+	for _, r := range result.Results {
+		if r.ID == "paris-capital" {
+			found = true
+			t.Logf("found doc score=%.4f content=%q", r.Score, r.Content)
+			break
+		}
+	}
+	if !found {
+		t.Errorf("paris-capital not in results: %+v", result.Results)
+	}
+}
+
+func TestE2E_MemoryDelete(t *testing.T) {
+	// Upsert then delete.
+	body, _ := json.Marshal(map[string]any{"content": "temporary document"})
+	upsert, _ := doRequest(t, http.MethodPut, baseURL+"/v1/memory/"+memStore+"/to-delete", body)
+	upsert.Body.Close()
+
+	del, err := doRequest(t, http.MethodDelete, baseURL+"/v1/memory/"+memStore+"/to-delete", nil)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	del.Body.Close()
+
+	if del.StatusCode != http.StatusNoContent {
+		t.Errorf("DELETE status = %d, want 204", del.StatusCode)
+	}
+}
+
+func TestE2E_MemoryUnknownStore(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{"query": "anything", "top_k": 1})
+	resp, err := doRequest(t, http.MethodPost, baseURL+"/v1/memory/no-such-store/query", body)
+	if err != nil {
+		t.Fatalf("query unknown store: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
 // ── SDK subprocess tests ──────────────────────────────────────────────────────
 
 func TestE2E_PythonSDK(t *testing.T) {
@@ -209,6 +361,7 @@ func TestE2E_PythonSDK(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"DAIMON_E2E=1",
 		"DAIMON_BASE_URL="+baseURL,
+		"DAIMON_MEM_STORE="+memStore,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -234,6 +387,7 @@ func TestE2E_TypeScriptSDK(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"DAIMON_E2E=1",
 		"DAIMON_BASE_URL="+baseURL,
+		"DAIMON_MEM_STORE="+memStore,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -245,8 +399,6 @@ func TestE2E_TypeScriptSDK(t *testing.T) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// converseText POSTs body to /v1/converse/{component}, reads all SSE text
-// chunks, and returns the concatenated response text.
 func converseText(t *testing.T, body map[string]any) string {
 	t.Helper()
 
@@ -316,7 +468,22 @@ func deleteSession(t *testing.T, sessionID string) {
 	}
 }
 
-// repoPath resolves a path relative to the repository root.
+func doRequest(t *testing.T, method, url string, body []byte) (*http.Response, error) {
+	t.Helper()
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, r)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return http.DefaultClient.Do(req)
+}
+
 func repoPath(t *testing.T, rel string) string {
 	t.Helper()
 	_, testFile, _, ok := runtime.Caller(1)
@@ -327,7 +494,7 @@ func repoPath(t *testing.T, rel string) string {
 }
 
 // ── Ollama container helpers ──────────────────────────────────────────────────
-// Duplicated from internal/components/llamacpp to keep e2e self-contained.
+// Self-contained so this package has no dependency on llamacpp's test helpers.
 
 func startOllama(ctx context.Context) (testcontainers.Container, error) {
 	return testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{

@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/memory"
 )
 
 func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
@@ -41,13 +42,33 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 
 	// Prepend stored history when the caller has an active session.
 	if sessionID != "" {
-		if history, ok := s.sessions.get(sessionID); ok {
+		history, err := s.sessions.Get(ctx, sessionID)
+		if err == nil && len(history) > 0 {
 			req.Messages = append(history, req.Messages...)
 		}
 	}
 
-	// Inject MCP tools so every request sees the full tool catalogue.
-	// req is decoded fresh from JSON each call, so this append is safe.
+	// RAG enrichment: pre-query the component's associated vector store with
+	// the last user message and inject results as a leading system message.
+	if storeName, ok := s.componentStores[componentName]; ok {
+		if ms, ok := s.stores[storeName]; ok {
+			if queryText := lastUserContent(req.Messages); queryText != "" {
+				if results, err := ms.Query(ctx, queryText, 5); err == nil && len(results) > 0 {
+					var sb strings.Builder
+					sb.WriteString("Relevant context from memory:\n")
+					for i, r := range results {
+						fmt.Fprintf(&sb, "%d. %s\n", i+1, r.Content)
+					}
+					req.Messages = append(
+						[]conversation.Message{{Role: conversation.RoleSystem, Content: sb.String()}},
+						req.Messages...,
+					)
+				}
+			}
+		}
+	}
+
+	// Inject all tools (MCP + store + graph) so every request sees the full catalogue.
 	req.Tools = append(req.Tools, s.tools...)
 
 	span.SetAttributes(
@@ -74,13 +95,13 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	writeSSE := func(chunk conversation.Chunk) {
-		data, _ := json.Marshal(chunk) // Chunk fields are all JSON-safe; error is impossible.
+		data, _ := json.Marshal(chunk)
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}
 
-	// Agentic loop: run Chat, collect tool calls, execute them via MCP,
-	// append results, repeat until the model returns pure text.
+	// Agentic loop: run Chat, collect tool calls, execute them, repeat until
+	// the model returns pure text with no tool calls.
 	var textBuf strings.Builder
 	for {
 		textBuf.Reset()
@@ -92,7 +113,6 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 				writeSSE(chunk)
 				textBuf.WriteString(chunk.Text)
 			case conversation.ChunkToolCall:
-				// Forward so clients can display progress ("calling tool X…").
 				writeSSE(chunk)
 				toolCalls = append(toolCalls, *chunk.ToolCall)
 			case conversation.ChunkError:
@@ -100,9 +120,8 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 				return
 			case conversation.ChunkDone:
 				if len(toolCalls) == 0 {
-					// Final text-only pass — persist the completed exchange.
 					if sessionID != "" {
-						s.sessions.set(sessionID, append(req.Messages, conversation.Message{
+						_ = s.sessions.Set(ctx, sessionID, append(req.Messages, conversation.Message{
 							Role:    conversation.RoleAssistant,
 							Content: textBuf.String(),
 						}))
@@ -110,7 +129,6 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 					writeSSE(chunk)
 					return
 				}
-				// Don't emit done — we're looping after tool execution.
 			}
 		}
 
@@ -118,13 +136,11 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Append the assistant's tool-call turn to the conversation.
 		req.Messages = append(req.Messages, conversation.Message{
 			Role:      conversation.RoleAssistant,
 			ToolCalls: toolCalls,
 		})
 
-		// Execute each tool and append its result.
 		for _, tc := range toolCalls {
 			result, toolErr := s.executeTool(ctx, tc.Name, tc.Input)
 			if toolErr != nil {
@@ -137,7 +153,6 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		// Next iteration with updated message history.
 		chunks, err = comp.Chat(ctx, req)
 		if err != nil {
 			writeSSE(conversation.Chunk{Type: conversation.ChunkError, Error: err.Error()})
@@ -147,14 +162,125 @@ func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
-	s.sessions.delete(r.PathValue("id"))
+	_ = s.sessions.Delete(r.Context(), r.PathValue("id"))
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// executeTool dispatches a tool call to: vector store → graph store → MCP tool.
 func (s *Server) executeTool(ctx context.Context, name string, input json.RawMessage) (string, error) {
-	client, ok := s.toolRoutes[name]
+	// Vector store tools.
+	if ms, ok := s.storeRoutes[name]; ok {
+		return s.executeStoreTool(ctx, name, ms, input)
+	}
+	// Graph store tools.
+	if gs, ok := s.graphRoutes[name]; ok {
+		return s.executeGraphTool(ctx, name, gs, input)
+	}
+	// MCP tools.
+	caller, ok := s.toolRoutes[name]
 	if !ok {
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
-	return client.CallTool(ctx, name, input)
+	return caller.CallTool(ctx, name, input)
+}
+
+func (s *Server) executeStoreTool(ctx context.Context, name string, ms memory.MemoryStore, input json.RawMessage) (string, error) {
+	var args map[string]any
+	if err := json.Unmarshal(input, &args); err != nil {
+		return "", fmt.Errorf("store tool %q: invalid input: %w", name, err)
+	}
+
+	if strings.HasSuffix(name, "_search") {
+		query, _ := args["query"].(string)
+		topK := 5
+		if v, ok := args["top_k"].(float64); ok {
+			topK = int(v)
+		}
+		results, err := ms.Query(ctx, query, topK)
+		if err != nil {
+			return "", fmt.Errorf("store search: %w", err)
+		}
+		b, _ := json.Marshal(map[string]any{"results": results})
+		return string(b), nil
+	}
+
+	if strings.HasSuffix(name, "_upsert") {
+		id, _ := args["id"].(string)
+		content, _ := args["content"].(string)
+		meta := map[string]string{}
+		if m, ok := args["metadata"].(map[string]any); ok {
+			for k, v := range m {
+				if sv, ok := v.(string); ok {
+					meta[k] = sv
+				}
+			}
+		}
+		assignedID, err := ms.Upsert(ctx, id, content, meta)
+		if err != nil {
+			return "", fmt.Errorf("store upsert: %w", err)
+		}
+		b, _ := json.Marshal(map[string]string{"id": assignedID})
+		return string(b), nil
+	}
+
+	return "", fmt.Errorf("unknown store operation in tool %q", name)
+}
+
+func (s *Server) executeGraphTool(ctx context.Context, name string, gs memory.GraphStore, input json.RawMessage) (string, error) {
+	var args map[string]any
+	if err := json.Unmarshal(input, &args); err != nil {
+		return "", fmt.Errorf("graph tool %q: invalid input: %w", name, err)
+	}
+
+	switch {
+	case strings.HasSuffix(name, "_cypher"):
+		query, _ := args["query"].(string)
+		params, _ := args["params"].(map[string]any)
+		rows, err := gs.Cypher(ctx, query, params)
+		if err != nil {
+			return "", fmt.Errorf("graph cypher: %w", err)
+		}
+		b, _ := json.Marshal(map[string]any{"rows": rows})
+		return string(b), nil
+
+	case strings.HasSuffix(name, "_add_node"):
+		id, _ := args["id"].(string)
+		var labels []string
+		if ls, ok := args["labels"].([]any); ok {
+			for _, l := range ls {
+				if s, ok := l.(string); ok {
+					labels = append(labels, s)
+				}
+			}
+		}
+		props, _ := args["props"].(map[string]any)
+		assignedID, err := gs.AddNode(ctx, id, labels, props)
+		if err != nil {
+			return "", fmt.Errorf("graph add_node: %w", err)
+		}
+		b, _ := json.Marshal(map[string]string{"id": assignedID})
+		return string(b), nil
+
+	case strings.HasSuffix(name, "_add_edge"):
+		from, _ := args["from"].(string)
+		to, _ := args["to"].(string)
+		relType, _ := args["type"].(string)
+		props, _ := args["props"].(map[string]any)
+		if err := gs.AddEdge(ctx, from, to, relType, props); err != nil {
+			return "", fmt.Errorf("graph add_edge: %w", err)
+		}
+		return `{"ok":true}`, nil
+	}
+
+	return "", fmt.Errorf("unknown graph operation in tool %q", name)
+}
+
+// lastUserContent returns the Content of the last RoleUser message, or "".
+func lastUserContent(msgs []conversation.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == conversation.RoleUser {
+			return msgs[i].Content
+		}
+	}
+	return ""
 }

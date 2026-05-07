@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/memory"
+	"github.com/sonicboom15/daimon/internal/session"
 )
 
 // fakeConversation returns a preset sequence of chunks.
@@ -48,16 +50,29 @@ func (f *fakeToolCaller) CallTool(_ context.Context, _ string, _ json.RawMessage
 	return f.result, nil
 }
 
+// testServer bundles a Server with its underlying in-memory session store for
+// direct inspection in tests.
+type testServer struct {
+	*Server
+	sess *session.InMemory
+}
+
 // newTestServer builds a Server wired to a single "fake" component.
-func newTestServer(conv conversation.Conversation) *Server {
+func newTestServer(conv conversation.Conversation) *testServer {
+	sess := session.NewInMemory()
 	s := &Server{
-		mux:        http.NewServeMux(),
-		components: map[string]conversation.Conversation{"fake": conv},
-		toolRoutes: make(map[string]toolCaller),
-		sessions:   newSessionStore(),
+		mux:             http.NewServeMux(),
+		components:      map[string]conversation.Conversation{"fake": conv},
+		stores:          make(map[string]memory.MemoryStore),
+		graphs:          make(map[string]memory.GraphStore),
+		componentStores: make(map[string]string),
+		toolRoutes:      make(map[string]toolCaller),
+		storeRoutes:     make(map[string]memory.MemoryStore),
+		graphRoutes:     make(map[string]memory.GraphStore),
+		sessions:        sess,
 	}
 	s.routes()
-	return s
+	return &testServer{Server: s, sess: sess}
 }
 
 // recordingConversation is like fakeConversation but also captures each Chat request.
@@ -80,7 +95,7 @@ func (r *recordingConversation) Chat(_ context.Context, req conversation.Request
 }
 
 // readSSEChunks sends a POST to /v1/converse/{component} and collects all SSE chunks.
-func readSSEChunks(t *testing.T, srv *Server, component string, body string) []conversation.Chunk {
+func readSSEChunks(t *testing.T, srv *testServer, component string, body string) []conversation.Chunk {
 	t.Helper()
 	req := httptest.NewRequest("POST", "/v1/converse/"+component,
 		strings.NewReader(body))
@@ -178,7 +193,6 @@ func TestHandleConverse_AgenticLoop(t *testing.T) {
 	toolID := "call-1"
 	toolInput := json.RawMessage(`{"q":"Paris"}`)
 
-	// First call returns a tool_call; second call returns pure text.
 	conv := &fakeConversation{calls: [][]conversation.Chunk{
 		{
 			{Type: conversation.ChunkToolCall, ToolCall: &conversation.ToolCall{
@@ -197,7 +211,6 @@ func TestHandleConverse_AgenticLoop(t *testing.T) {
 
 	chunks := readSSEChunks(t, srv, "fake", `{"messages":[{"role":"user","content":"capital?"}]}`)
 
-	// Expect: tool_call chunk, then text chunk, then done.
 	types := make([]string, len(chunks))
 	for i, c := range chunks {
 		types[i] = string(c.Type)
@@ -230,8 +243,11 @@ func TestSession_HistoryStoredAfterFirstRequest(t *testing.T) {
 
 	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[{"role":"user","content":"Hello"}]}`)
 
-	history, ok := srv.sessions.get("s1")
-	if !ok {
+	history, err := srv.sess.Get(context.Background(), "s1")
+	if err != nil {
+		t.Fatalf("Get session: %v", err)
+	}
+	if len(history) == 0 {
 		t.Fatal("session not stored after first request")
 	}
 	if len(history) != 2 {
@@ -255,7 +271,6 @@ func TestSession_HistoryPrependedOnSecondRequest(t *testing.T) {
 	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[{"role":"user","content":"Hello"}]}`)
 	readSSEChunks(t, srv, "fake", `{"session_id":"s1","messages":[{"role":"user","content":"Follow-up"}]}`)
 
-	// Second Chat call should receive [user:Hello, assistant:Hi!, user:Follow-up].
 	if len(conv.recorded) < 2 {
 		t.Fatalf("Chat called %d times, want at least 2", len(conv.recorded))
 	}
@@ -299,14 +314,14 @@ func TestSession_NoSessionIDIsStateless(t *testing.T) {
 
 	readSSEChunks(t, srv, "fake", `{"messages":[{"role":"user","content":"hi"}]}`)
 
-	if srv.sessions.len() != 0 {
-		t.Errorf("session count = %d, want 0 for stateless request", srv.sessions.len())
+	if srv.sess.Len() != 0 {
+		t.Errorf("session count = %d, want 0 for stateless request", srv.sess.Len())
 	}
 }
 
 func TestSession_DeleteClearsHistory(t *testing.T) {
 	srv := newTestServer(&fakeConversation{calls: [][]conversation.Chunk{{}}})
-	srv.sessions.set("s1", []conversation.Message{{Role: conversation.RoleUser, Content: "hi"}})
+	_ = srv.sess.Set(context.Background(), "s1", []conversation.Message{{Role: conversation.RoleUser, Content: "hi"}})
 
 	req := httptest.NewRequest("DELETE", "/v1/sessions/s1", nil)
 	w := httptest.NewRecorder()
@@ -315,7 +330,8 @@ func TestSession_DeleteClearsHistory(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Errorf("DELETE status = %d, want 204", w.Code)
 	}
-	if _, ok := srv.sessions.get("s1"); ok {
+	msgs, _ := srv.sess.Get(context.Background(), "s1")
+	if msgs != nil {
 		t.Error("session still present after DELETE")
 	}
 }

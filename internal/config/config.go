@@ -17,12 +17,15 @@ type ModelConfig struct {
 }
 
 // Component is a single configured provider instance.
+// For LLM components, MemoryStore optionally names a vector store component
+// that will be used for transparent RAG enrichment on every Chat call.
 type Component struct {
-	Name     string                 `yaml:"name"`
-	Type     string                 `yaml:"type"`
-	Metadata map[string]string      `yaml:"metadata"`
-	Models   map[string]ModelConfig `yaml:"models"`
-	Defaults ComponentDefaults      `yaml:"defaults"`
+	Name        string                 `yaml:"name"`
+	Type        string                 `yaml:"type"`
+	Metadata    map[string]string      `yaml:"metadata"`
+	Models      map[string]ModelConfig `yaml:"models"`
+	Defaults    ComponentDefaults      `yaml:"defaults"`
+	MemoryStore string                 `yaml:"memory_store"`
 }
 
 // Telemetry holds OpenTelemetry configuration.

@@ -18,7 +18,7 @@ daimon serve --config /path/to/config.yaml
 ```yaml
 port: 3500          # port to listen on (default: 3500)
 
-components:         # one or more provider instances
+components:         # LLMs, embedders, session stores, vector stores, and graph stores
   - ...
 
 mcp_servers:        # (optional) MCP tool servers
@@ -28,6 +28,8 @@ telemetry:          # (optional) OpenTelemetry
   otlp_endpoint: ""
 ```
 
+All component types live under `components:`. The sidecar auto-detects the type by trying each registry in order: **embedding → session → vector → graph → LLM**. Declaration order matters: embedders must appear before vector stores that use them, and vector stores before LLM components that reference them via `memory_store:`.
+
 ---
 
 ## Full example
@@ -36,8 +38,54 @@ telemetry:          # (optional) OpenTelemetry
 port: 3500
 
 components:
+
+  # ── Embedder (declare before vector stores that reference it) ───────────────
+  - name: embedder
+    type: embedding/openai
+    metadata:
+      base_url: http://localhost:11434/v1   # Ollama — omit for OpenAI
+      model: nomic-embed-text
+      dimensions: "768"
+
+  # ── Session store (optional; defaults to in-memory) ─────────────────────────
+  - name: sessions
+    type: session/redis
+    metadata:
+      addr: localhost:6379
+      ttl: "24h"
+
+  # ── Vector / document stores ────────────────────────────────────────────────
+  - name: docs
+    type: inmemory        # BM25 lexical — no external service
+
+  - name: chroma-docs
+    type: chroma
+    metadata:
+      base_url: http://localhost:8000
+      collection: daimon
+      create_if_missing: "true"
+
+  - name: qdrant-docs
+    type: qdrant
+    metadata:
+      base_url: http://localhost:6333
+      collection: daimon
+      embedder: embedder           # reference by component name
+      create_if_missing: "true"
+
+  # ── Graph stores ────────────────────────────────────────────────────────────
+  - name: kg
+    type: neo4j
+    metadata:
+      bolt_url: bolt://localhost:7687
+      database: neo4j
+      username: neo4j
+      password: secret
+
+  # ── LLM components ──────────────────────────────────────────────────────────
   - name: claude
     type: anthropic
+    memory_store: chroma-docs    # transparent RAG from chroma-docs on every request
     metadata:
       default_model: claude-opus-4-7
       # api_key: sk-ant-...  # or ANTHROPIC_API_KEY
@@ -78,9 +126,17 @@ telemetry:
 
     ---
 
-    Provider instances, per-model API keys, and inference parameter defaults.
+    LLM providers, embedders, session stores, vector stores, and graph stores.
 
     [:octicons-arrow-right-24: Components](components.md)
+
+-   :material-database:{ .lg .middle } **Stores**
+
+    ---
+
+    Vector search and graph database backends for memory and knowledge.
+
+    [:octicons-arrow-right-24: Stores](../stores/index.md)
 
 -   :material-tools:{ .lg .middle } **MCP Servers**
 

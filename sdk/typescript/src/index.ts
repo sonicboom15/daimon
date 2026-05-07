@@ -7,5 +7,7 @@ export type {
   StreamOptions,
   ToolLike,
 } from './client.js';
+export { GraphStoreClient, MemoryStoreClient } from './stores.js';
+export type { AddEdgeOptions, AddNodeOptions, UpsertOptions } from './stores.js';
 export { Chunk, DaimonError, Message, Tool, ToolCall } from './types.js';
-export type { ChunkType, MessageRole } from './types.js';
+export type { ChunkType, MemoryResult, MessageRole } from './types.js';

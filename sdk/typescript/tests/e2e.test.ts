@@ -18,6 +18,7 @@ import { Client, DaimonError } from '../src/index.js';
 
 const COMPONENT = 'llama';
 const BASE_URL = process.env.DAIMON_BASE_URL ?? 'http://127.0.0.1:3500';
+const MEM_STORE = process.env.DAIMON_MEM_STORE ?? 'mem';
 const E2E = Boolean(process.env.DAIMON_E2E);
 
 /** Short random suffix so concurrent test runs don't share session state. */
@@ -132,6 +133,79 @@ describe.skipIf(!E2E)('E2E: session management', () => {
 
   it('clearing a non-existent session does not throw', async () => {
     await expect(client.clearSession(sid())).resolves.toBeUndefined();
+  }, TIMEOUT);
+});
+
+// ---------------------------------------------------------------------------
+// Memory store (inmemory BM25 — no external service)
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!E2E)('E2E: memory store', () => {
+  const client = new Client({ baseUrl: BASE_URL, timeout: TIMEOUT });
+
+  it('upsert with id returns the same id', async () => {
+    const store = client.memory(MEM_STORE);
+    const docId = `e2e-ts-${randomBytes(4).toString('hex')}`;
+    const returned = await store.upsert('The Eiffel Tower is 330 metres tall.', { id: docId });
+    expect(returned).toBe(docId);
+  }, TIMEOUT);
+
+  it('upsert without id returns a non-empty server-assigned id', async () => {
+    const store = client.memory(MEM_STORE);
+    const assigned = await store.upsert('The Seine is the main river of Paris.');
+    expect(assigned).not.toBe('');
+  }, TIMEOUT);
+
+  it('query returns the seeded document', async () => {
+    const store = client.memory(MEM_STORE);
+    const docId = `e2e-ts-q-${randomBytes(4).toString('hex')}`;
+    await store.upsert('TypeScript is a typed superset of JavaScript.', { id: docId });
+
+    const results = await store.query('typed JavaScript', 5);
+    expect(results.length).toBeGreaterThan(0);
+
+    const ids = results.map((r) => r.id);
+    expect(ids).toContain(docId);
+  }, TIMEOUT);
+
+  it('query results are MemoryResult-shaped', async () => {
+    const store = client.memory(MEM_STORE);
+    const docId = `e2e-ts-shape-${randomBytes(4).toString('hex')}`;
+    await store.upsert('Go is a statically typed compiled language.', { id: docId });
+
+    const results = await store.query('compiled language', 3);
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(typeof r.id).toBe('string');
+      expect(typeof r.content).toBe('string');
+      expect(typeof r.score).toBe('number');
+      expect(typeof r.metadata).toBe('object');
+    }
+  }, TIMEOUT);
+
+  it('upsert with metadata stores the document', async () => {
+    const store = client.memory(MEM_STORE);
+    const docId = `e2e-ts-meta-${randomBytes(4).toString('hex')}`;
+    await store.upsert('Rust prevents memory safety bugs.', { id: docId, metadata: { src: 'wiki' } });
+
+    const results = await store.query('memory safety', 5);
+    const ids = results.map((r) => r.id);
+    expect(ids).toContain(docId);
+  }, TIMEOUT);
+
+  it('delete does not throw', async () => {
+    const store = client.memory(MEM_STORE);
+    const docId = `e2e-ts-del-${randomBytes(4).toString('hex')}`;
+    await store.upsert('Temporary document.', { id: docId });
+    await expect(store.delete(docId)).resolves.toBeUndefined();
+  }, TIMEOUT);
+
+  it('double delete is idempotent', async () => {
+    const store = client.memory(MEM_STORE);
+    const docId = `e2e-ts-idem-${randomBytes(4).toString('hex')}`;
+    await store.upsert('Another temporary document.', { id: docId });
+    await store.delete(docId);
+    await expect(store.delete(docId)).resolves.toBeUndefined();
   }, TIMEOUT);
 });
 

@@ -31,6 +31,7 @@ pytestmark = pytest.mark.skipif(
 
 COMPONENT = "llama"
 BASE_URL = os.getenv("DAIMON_BASE_URL", "http://127.0.0.1:3500")
+MEM_STORE = os.getenv("DAIMON_MEM_STORE", "mem")
 
 
 @pytest.fixture
@@ -115,3 +116,66 @@ class TestSession:
 
     def test_clear_nonexistent_session_does_not_raise(self, client: daimon.Client) -> None:
         client.clear_session(f"pytest-ghost-{uuid.uuid4().hex[:8]}")
+
+
+# ---------------------------------------------------------------------------
+# Memory store (inmemory BM25 — no external service)
+# ---------------------------------------------------------------------------
+
+
+class TestMemoryStore:
+    def test_upsert_with_id_returns_id(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        doc_id = f"e2e-{uuid.uuid4().hex[:8]}"
+        returned = store.upsert("The Eiffel Tower is 330 metres tall.", id=doc_id)
+        assert returned == doc_id
+
+    def test_upsert_without_id_returns_assigned_id(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        assigned = store.upsert("The Seine is the main river of Paris.")
+        assert assigned != "", "expected non-empty assigned id"
+
+    def test_query_returns_seeded_document(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        doc_id = f"e2e-query-{uuid.uuid4().hex[:8]}"
+        store.upsert("Python is a popular programming language.", id=doc_id)
+
+        results = store.query("programming language", top_k=5)
+        assert len(results) > 0, "expected at least one result"
+        ids = [r.id for r in results]
+        assert doc_id in ids, f"{doc_id!r} not in result ids: {ids}"
+
+        # Verify MemoryResult fields are populated.
+        matched = next(r for r in results if r.id == doc_id)
+        assert matched.content != ""
+        assert isinstance(matched.score, float)
+
+    def test_query_returns_memory_result_instances(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        doc_id = f"e2e-type-{uuid.uuid4().hex[:8]}"
+        store.upsert("Go is a compiled language.", id=doc_id)
+
+        results = store.query("compiled language", top_k=3)
+        assert all(isinstance(r, daimon.MemoryResult) for r in results)
+
+    def test_upsert_with_metadata(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        doc_id = f"e2e-meta-{uuid.uuid4().hex[:8]}"
+        store.upsert("Rust is a systems language.", id=doc_id, metadata={"src": "wiki"})
+
+        results = store.query("systems language", top_k=5)
+        ids = [r.id for r in results]
+        assert doc_id in ids
+
+    def test_delete_removes_document(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        doc_id = f"e2e-del-{uuid.uuid4().hex[:8]}"
+        store.upsert("Temporary document to be deleted.", id=doc_id)
+        store.delete(doc_id)  # must not raise
+
+    def test_delete_idempotent(self, client: daimon.Client) -> None:
+        store = client.memory(MEM_STORE)
+        doc_id = f"e2e-idem-{uuid.uuid4().hex[:8]}"
+        store.upsert("Another temporary document.", id=doc_id)
+        store.delete(doc_id)
+        store.delete(doc_id)  # second delete must not raise

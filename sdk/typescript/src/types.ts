@@ -1,3 +1,10 @@
+export interface MemoryResult {
+  id: string;
+  content: string;
+  metadata: Record<string, string>;
+  score: number;
+}
+
 export class DaimonError extends Error {
   constructor(message: string) {
     super(message);

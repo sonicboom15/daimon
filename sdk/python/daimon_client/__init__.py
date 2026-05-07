@@ -1,7 +1,22 @@
 from ._async_client import AsyncClient
 from ._client import Client
-from ._types import Chunk, DaimonError, Message, Tool, ToolCall
+from ._stores import AsyncGraphStoreClient, AsyncMemoryStoreClient, GraphStoreClient, MemoryStoreClient
+from ._types import Chunk, DaimonError, MemoryResult, Message, Tool, ToolCall
 
-__version__ = "0.0.2"
+__version__ = "0.1.0"
 
-__all__ = ["Client", "AsyncClient", "Message", "Tool", "ToolCall", "Chunk", "DaimonError", "__version__"]
+__all__ = [
+    "Client",
+    "AsyncClient",
+    "MemoryStoreClient",
+    "AsyncMemoryStoreClient",
+    "GraphStoreClient",
+    "AsyncGraphStoreClient",
+    "Message",
+    "Tool",
+    "ToolCall",
+    "Chunk",
+    "MemoryResult",
+    "DaimonError",
+    "__version__",
+]
