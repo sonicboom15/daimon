@@ -37,5 +37,10 @@
     "sourcemap": true,
     "clean": true
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sonicboom15/daimon.git",
+    "directory": "sdk/typescript"
+  },
   "license": "Apache-2.0"
 }
