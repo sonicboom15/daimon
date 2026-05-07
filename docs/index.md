@@ -1,3 +1,9 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # Daimon
 
 > The spirit that runs alongside your AI app.
@@ -75,3 +81,59 @@ your app  ──POST /v1/converse/claude──▶  daimon  ──▶  Anthropic 
 
 [Get started →](quickstart.md){ .md-button .md-button--primary }
 [API reference →](api.md){ .md-button }
+
+---
+
+## Explore the docs
+
+<div class="grid cards" markdown>
+
+-   :material-rocket-launch:{ .lg .middle } **Quick Start**
+
+    ---
+
+    Up and running in five minutes with a config file and your first request.
+
+    [:octicons-arrow-right-24: Quick Start](quickstart.md)
+
+-   :material-api:{ .lg .middle } **HTTP API**
+
+    ---
+
+    Full reference for `/v1/converse`, sessions, SSE chunk types, and healthz.
+
+    [:octicons-arrow-right-24: API reference](api.md)
+
+-   :material-language-python:{ .lg .middle } **Python SDK**
+
+    ---
+
+    `pip install daimon-client` — sync and async streaming clients with sessions.
+
+    [:octicons-arrow-right-24: Python SDK](sdk/python.md)
+
+-   :material-language-typescript:{ .lg .middle } **TypeScript SDK**
+
+    ---
+
+    `npm install daimon-client` — native fetch, async generators, full type safety.
+
+    [:octicons-arrow-right-24: TypeScript SDK](sdk/typescript.md)
+
+-   :material-wrench:{ .lg .middle } **Configuration**
+
+    ---
+
+    Components, inference defaults, MCP servers, and telemetry — all in one YAML file.
+
+    [:octicons-arrow-right-24: Configuration](configuration.md)
+
+-   :material-tools:{ .lg .middle } **Tool Calls (MCP)**
+
+    ---
+
+    Wire up filesystem, GitHub, search, and custom MCP servers with zero client code.
+
+    [:octicons-arrow-right-24: MCP tools](mcp.md)
+
+</div>

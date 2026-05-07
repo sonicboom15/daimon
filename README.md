@@ -2,6 +2,12 @@
 
 > The spirit that runs alongside your AI app.
 
+[![GitHub release](https://img.shields.io/github/v/release/sonicboom15/daimon)](https://github.com/sonicboom15/daimon/releases/latest)
+[![PyPI](https://img.shields.io/pypi/v/daimon-client?label=PyPI)](https://pypi.org/project/daimon-client/)
+[![npm](https://img.shields.io/npm/v/daimon-client?label=npm)](https://www.npmjs.com/package/daimon-client)
+[![License](https://img.shields.io/github/license/sonicboom15/daimon)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-sonicboom15.github.io%2Fdaimon-blue)](https://sonicboom15.github.io/daimon/)
+
 Daimon is a local sidecar process that gives your application a single, stable HTTP interface to any LLM. Swap providers, rotate keys, add tracing, or wire up MCP tools — without touching your app code.
 
 Inspired by [Dapr's](https://dapr.io) component model, adapted for AI-native primitives: streaming responses, pluggable providers, MCP tool calls, and (eventually) memory and agent orchestration.
