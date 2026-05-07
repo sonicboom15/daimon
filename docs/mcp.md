@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Tool Calls (MCP)
 
 Daimon acts as an **MCP client**. It connects to [Model Context Protocol](https://modelcontextprotocol.io) servers at startup and automatically gives the model access to their tools — no code changes in your application needed.

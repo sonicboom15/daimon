@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Quick Start
 
 Get daimon running and make your first streaming request in under five minutes.
@@ -44,39 +49,64 @@ Get daimon running and make your first streaming request in under five minutes.
 
 ---
 
-## 2. Create a config file
+## 2. Set up a model
 
-Save this as `config.yaml`. You only need the provider(s) you have keys for.
+=== "Anthropic / OpenAI"
 
-```yaml
-port: 3500
+    Export your API key, then save a `config.yaml`:
 
-components:
-  - name: claude
-    type: anthropic
-    metadata:
-      default_model: claude-haiku-4-5-20251001
-      # api_key: sk-ant-...  # or set ANTHROPIC_API_KEY
+    ```bash
+    export ANTHROPIC_API_KEY=sk-ant-...
+    # export OPENAI_API_KEY=sk-...
+    ```
 
-  - name: gpt4o
-    type: openai
-    metadata:
-      default_model: gpt-4o-mini
-      # api_key: sk-...  # or set OPENAI_API_KEY
-```
+    ```yaml title="config.yaml"
+    port: 3500
+
+    components:
+      - name: claude
+        type: anthropic
+        metadata:
+          default_model: claude-haiku-4-5-20251001
+
+      - name: gpt4o
+        type: openai
+        metadata:
+          default_model: gpt-4o-mini
+    ```
+
+=== "Local model (Docker — no API key)"
+
+    Start [Ollama](https://ollama.com) in Docker and pull a model:
+
+    ```bash
+    docker run -d -p 11434:11434 --name ollama ollama/ollama
+    docker exec ollama ollama pull qwen2.5:1.5b
+    ```
+
+    Save a `config.yaml` pointing at it:
+
+    ```yaml title="config.yaml"
+    port: 3500
+
+    components:
+      - name: local
+        type: llamacpp
+        metadata:
+          base_url: http://localhost:11434/v1
+          default_model: qwen2.5:1.5b
+    ```
+
+    !!! tip
+        Swap `qwen2.5:1.5b` for any model on [ollama.com/library](https://ollama.com/library). Larger models are slower but more capable.
 
 ---
 
 ## 3. Start daimon
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-
 daimon serve --config config.yaml
 ```
-
-You should see:
 
 ```
 INFO daimon listening addr=127.0.0.1:3500
@@ -86,19 +116,8 @@ INFO daimon listening addr=127.0.0.1:3500
 
 ## 4. Make a request
 
-=== "curl"
-
-    ```bash
-    curl -sN http://127.0.0.1:3500/v1/converse/claude \
-      -H "Content-Type: application/json" \
-      -d '{"messages":[{"role":"user","content":"What is a daimon?"}]}'
-    ```
-
-    ```
-    data: {"type":"text","text":"In ancient Greek thought, a daimon"}
-    data: {"type":"text","text":" is a guiding spirit or divine force..."}
-    data: {"type":"done"}
-    ```
+!!! note
+    Examples below use `claude`. If you used the Docker setup, replace it with `local`.
 
 === "Python SDK"
 
@@ -112,6 +131,21 @@ INFO daimon listening addr=127.0.0.1:3500
     with daimon.Client() as client:
         for text in client.stream("claude", "What is a daimon?"):
             print(text, end="", flush=True)
+    ```
+
+=== "TypeScript SDK"
+
+    ```bash
+    npm install daimon-client
+    ```
+
+    ```typescript
+    import { Client } from 'daimon-client';
+
+    const client = new Client();
+    for await (const text of client.stream('claude', 'What is a daimon?')) {
+      process.stdout.write(text);
+    }
     ```
 
 === "Python (async)"
@@ -128,30 +162,42 @@ INFO daimon listening addr=127.0.0.1:3500
     asyncio.run(main())
     ```
 
-=== "Any HTTP client"
-
-    Daimon speaks plain HTTP + SSE. Use any language:
-
-    ```js
-    // Node.js (using fetch)
-    const res = await fetch("http://127.0.0.1:3500/v1/converse/claude", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] }),
-    });
-    for await (const chunk of res.body) {
-      const line = new TextDecoder().decode(chunk);
-      if (line.startsWith("data: ")) {
-        const { type, text } = JSON.parse(line.slice(6));
-        if (type === "text") process.stdout.write(text);
-      }
-    }
-    ```
-
 ---
 
 ## Next steps
 
-- [Full configuration reference](configuration.md) — defaults, MCP servers, telemetry
-- [Python SDK](sdk/python.md) — multi-turn conversations, tool calls, async
-- [Tool calls via MCP](mcp.md) — wire up filesystem, GitHub, or custom tools
+<div class="grid cards" markdown>
+
+-   :material-cog:{ .lg .middle } **Configuration**
+
+    ---
+
+    Components, inference defaults, MCP servers, telemetry — all in one YAML.
+
+    [:octicons-arrow-right-24: Configuration](configuration/index.md)
+
+-   :material-language-python:{ .lg .middle } **Python SDK**
+
+    ---
+
+    Multi-turn conversations, sessions, tool calls, async.
+
+    [:octicons-arrow-right-24: Python SDK](sdk/python.md)
+
+-   :material-language-typescript:{ .lg .middle } **TypeScript SDK**
+
+    ---
+
+    Native fetch, async generators, full type safety.
+
+    [:octicons-arrow-right-24: TypeScript SDK](sdk/typescript.md)
+
+-   :material-tools:{ .lg .middle } **Tool Calls (MCP)**
+
+    ---
+
+    Wire up filesystem, GitHub, search, and custom tools.
+
+    [:octicons-arrow-right-24: MCP tools](mcp.md)
+
+</div>

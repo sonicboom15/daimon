@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # HTTP API
 
 Daimon exposes two endpoints. All communication uses plain HTTP — no gRPC, no WebSockets.

@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Development
 
 ## Prerequisites
@@ -45,7 +50,7 @@ Integration tests make real API calls or start Docker containers. They are gated
 OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-... \
   go test -tags integration -v ./internal/components/...
 
-# llamacpp only — starts Ollama in Docker, pulls qwen2:0.5b (~350 MB)
+# llamacpp only — starts Ollama in Docker, pulls qwen2.5:1.5b
 go test -tags integration -v ./internal/components/llamacpp/
 
 # Use a different model (e.g. one that supports tool calls)

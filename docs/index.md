@@ -4,9 +4,11 @@ hide:
   - toc
 ---
 
+<div align="center" markdown>
+
 # Daimon
 
-> The spirit that runs alongside your AI app.
+**The spirit that runs alongside your AI app.**
 
 Daimon is a local sidecar process that gives your application a **single, stable HTTP interface** to any LLM. Swap providers, rotate keys, add tracing, or wire up MCP tool servers — without touching your application code.
 
@@ -16,6 +18,8 @@ your app  ──POST /v1/converse/claude──▶  daimon  ──▶  Anthropic 
                                               ▼
                                        MCP tool server(s)
 ```
+
+</div>
 
 ---
 
@@ -79,12 +83,20 @@ your app  ──POST /v1/converse/claude──▶  daimon  ──▶  Anthropic 
 
 ## First request in 60 seconds
 
+<div align="center" markdown>
+
 [Get started →](quickstart.md){ .md-button .md-button--primary }
 [API reference →](api.md){ .md-button }
 
+</div>
+
 ---
 
+<div align="center" markdown>
+
 ## Explore the docs
+
+</div>
 
 <div class="grid cards" markdown>
 
@@ -126,7 +138,7 @@ your app  ──POST /v1/converse/claude──▶  daimon  ──▶  Anthropic 
 
     Components, inference defaults, MCP servers, and telemetry — all in one YAML file.
 
-    [:octicons-arrow-right-24: Configuration](configuration.md)
+    [:octicons-arrow-right-24: Configuration](configuration/index.md)
 
 -   :material-tools:{ .lg .middle } **Tool Calls (MCP)**
 

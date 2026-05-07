@@ -69,7 +69,11 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Quick Start: quickstart.md
-  - Configuration: configuration.md
+  - Configuration:
+      - Overview: configuration/index.md
+      - Components: configuration/components.md
+      - MCP Servers: configuration/mcp-servers.md
+      - Telemetry: configuration/telemetry.md
   - HTTP API: api.md
   - SDKs:
       - Python: sdk/python.md

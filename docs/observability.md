@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Observability
 
 Daimon emits **OpenTelemetry traces** for every request. When an OTLP endpoint is configured, each call to `/v1/converse/{component}` creates a root span with the provider and model as attributes.
