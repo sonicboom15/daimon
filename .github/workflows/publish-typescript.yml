@@ -7,11 +7,12 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # required for npm provenance attestation
+  id-token: write  # required for npm Trusted Publishing (OIDC)
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: npm  # must match the environment name in the npmjs.com Trusted Publisher config
 
     steps:
       - uses: actions/checkout@v4
@@ -36,5 +37,3 @@ jobs:
       - name: Publish to npm
         working-directory: sdk/typescript
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
