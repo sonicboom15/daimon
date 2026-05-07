@@ -11,7 +11,7 @@
 // couple of minutes depending on network speed. Subsequent runs use Docker's
 // layer cache.
 //
-// Run: go test -tags integration -v ./internal/components/llamacpp/
+// Run: go test -tags integration -v ./internal/components/llm/llamacpp/
 // Override model: DAIMON_OLLAMA_MODEL=llama3.2:1b go test -tags integration ...
 package llamacpp_test
 
@@ -31,7 +31,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/sonicboom15/daimon/internal/components/llamacpp"
+	"github.com/sonicboom15/daimon/internal/components/llm/llamacpp"
 	"github.com/sonicboom15/daimon/internal/conversation"
 )
 

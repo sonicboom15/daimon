@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sonicboom15/daimon/internal/components/anthropic"
+	"github.com/sonicboom15/daimon/internal/components/llm/anthropic"
 	"github.com/sonicboom15/daimon/internal/conversation"
 )
 

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sonicboom15/daimon/internal/components/openai"
+	"github.com/sonicboom15/daimon/internal/components/llm/openai"
 	"github.com/sonicboom15/daimon/internal/conversation"
 )
 
