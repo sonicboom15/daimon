@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from ._client import _build_body, _normalise_input
+from ._utils import _build_body, _normalise_input
 from ._types import Chunk, DaimonError, Message, Tool, ToolCall
 
 

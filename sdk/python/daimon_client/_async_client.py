@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from ._client import _build_body, _normalise_input
+from ._utils import _build_body, _normalise_input
 from ._llm_client import AsyncLLMClient
 from ._stores import AsyncGraphStoreClient, AsyncMemoryStoreClient
 from ._types import Chunk, Message, Tool, ToolCall
