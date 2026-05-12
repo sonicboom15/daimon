@@ -130,6 +130,24 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 		}
 	}
 
+	// If exactly one component of a given type is configured and none is explicitly
+	// named "default", alias it so clients can omit the name entirely.
+	if _, ok := llmComponents["default"]; !ok && len(llmComponents) == 1 {
+		for _, c := range llmComponents {
+			llmComponents["default"] = c
+		}
+	}
+	if _, ok := vectorStores["default"]; !ok && len(vectorStores) == 1 {
+		for _, ms := range vectorStores {
+			vectorStores["default"] = ms
+		}
+	}
+	if _, ok := graphStores["default"]; !ok && len(graphStores) == 1 {
+		for _, gs := range graphStores {
+			graphStores["default"] = gs
+		}
+	}
+
 	// Connect to configured MCP servers.
 	mcpClients := make([]*mcp.Client, 0, len(cfg.MCPServers))
 	for _, mcpSrv := range cfg.MCPServers {

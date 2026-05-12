@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
 
+from ._llm_client import LLMClient
 from ._stores import GraphStoreClient, MemoryStoreClient
-from ._types import Chunk, DaimonError, Message, Tool, ToolCall
+from ._types import Chunk, Message, Tool, ToolCall
 
 
 def _encode_msg(m: Message | dict[str, Any]) -> dict[str, Any]:
@@ -51,99 +51,47 @@ class Client:
             self._http = httpx.Client(timeout=self._timeout)
         return self._http
 
+    def llm(self, component: str = "default") -> LLMClient:
+        """Return a client scoped to the named LLM component."""
+        return LLMClient(self._base, component, self._client)
+
     def converse(
         self,
-        component: str,
+        component: str = "default",
         *,
         messages: list[Message | dict[str, Any]],
-        model: str = "",
-        system: str = "",
-        tools: list[Tool | dict[str, Any]] | None = None,
-        max_tokens: int = 0,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        top_k: int | None = None,
-        stop: list[str] | None = None,
-        frequency_penalty: float | None = None,
-        presence_penalty: float | None = None,
-        seed: int | None = None,
-        session_id: str | None = None,
+        **kwargs: Any,
     ) -> Iterator[Chunk]:
-        """Stream a chat request. Yields Chunk objects until done or error."""
-        body = _build_body(
-            messages, model, system, tools, max_tokens, temperature,
-            top_p, top_k, stop, frequency_penalty, presence_penalty, seed,
-            session_id,
-        )
-        url = f"{self._base}/v1/converse/{component}"
-        with self._client().stream("POST", url, json=body) as resp:
-            resp.raise_for_status()
-            for line in resp.iter_lines():
-                if not line.startswith("data: "):
-                    continue
-                chunk = Chunk._from_dict(json.loads(line[6:]))
-                yield chunk
-                if chunk.type in ("done", "error"):
-                    return
+        """Shorthand for ``client.llm(component).converse(messages=...)``. """
+        return self.llm(component).converse(messages=messages, **kwargs)
 
     def stream(
         self,
-        component: str,
-        prompt_or_messages: str | list[Message | dict[str, Any]],
-        *,
-        on_tool_call: Callable[[ToolCall], None] | None = None,
-        model: str = "",
+        component: str = "default",
+        prompt_or_messages: str | list[Message | dict[str, Any]] = "",
         **kwargs: Any,
     ) -> Iterator[str]:
-        """Yield text fragments. Raises DaimonError on error, calls on_tool_call for tool events.
-
-        Pass session_id=... to maintain server-side conversation history.
-
-        >>> for text in client.stream("llama", "Hello!"):
-        ...     print(text, end="", flush=True)
-
-        >>> for text in client.stream("claude", messages=[...],
-        ...                           on_tool_call=lambda tc: print(f"[{tc.name}]")):
-        ...     print(text, end="", flush=True)
-        """
-        messages = _normalise_input(prompt_or_messages)
-        for chunk in self.converse(component, messages=messages, model=model, **kwargs):
-            if chunk.type == "text":
-                yield chunk.text
-            elif chunk.type == "tool_call" and on_tool_call is not None:
-                on_tool_call(chunk.tool_call)  # type: ignore[arg-type]
-            elif chunk.type == "error":
-                raise DaimonError(chunk.error)
+        """Shorthand for ``client.llm(component).stream(prompt)``."""
+        return self.llm(component).stream(prompt_or_messages, **kwargs)
 
     def chat(
         self,
-        component: str,
-        prompt_or_messages: str | list[Message | dict[str, Any]],
-        *,
-        model: str = "",
+        component: str = "default",
+        prompt_or_messages: str | list[Message | dict[str, Any]] = "",
         **kwargs: Any,
     ) -> str:
-        """Convenience wrapper: send and return the full text response.
-
-        Pass session_id=... to maintain server-side conversation history.
-        """
-        messages = _normalise_input(prompt_or_messages)
-        return "".join(
-            chunk.text
-            for chunk in self.converse(component, messages=messages, model=model, **kwargs)
-            if chunk.type == "text"
-        )
+        """Shorthand for ``client.llm(component).chat(prompt)``."""
+        return self.llm(component).chat(prompt_or_messages, **kwargs)
 
     def clear_session(self, session_id: str) -> None:
-        """Delete the stored conversation history for the given session ID."""
-        resp = self._client().delete(f"{self._base}/v1/sessions/{session_id}")
-        resp.raise_for_status()
+        """Shorthand for ``client.llm().clear_session(session_id)``."""
+        self.llm().clear_session(session_id)
 
-    def memory(self, store: str) -> MemoryStoreClient:
+    def memory(self, store: str = "default") -> MemoryStoreClient:
         """Return a client scoped to the named vector / document store."""
         return MemoryStoreClient(self._base, store, self._client)
 
-    def graph(self, store: str) -> GraphStoreClient:
+    def graph(self, store: str = "default") -> GraphStoreClient:
         """Return a client scoped to the named graph store."""
         return GraphStoreClient(self._base, store, self._client)
 

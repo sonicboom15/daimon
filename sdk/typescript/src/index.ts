@@ -1,4 +1,4 @@
-export { Client } from './client.js';
+export { Client, LLMClient } from './client.js';
 export type {
   ChatOptions,
   ClientOptions,

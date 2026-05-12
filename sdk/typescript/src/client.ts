@@ -115,22 +115,20 @@ async function* parseSSE(body: ReadableStream<Uint8Array>): AsyncGenerator<Chunk
   }
 }
 
-export class Client {
-  private readonly baseUrl: string;
-  private readonly timeout: number;
+export class LLMClient {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly component: string,
+    private readonly timeout: number,
+  ) {}
 
-  constructor(options: ClientOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? 'http://127.0.0.1:3500').replace(/\/$/, '');
-    this.timeout = options.timeout ?? 120_000;
-  }
-
-  async *converse(component: string, options: ConversationOptions): AsyncGenerator<Chunk> {
+  async *converse(options: ConversationOptions): AsyncGenerator<Chunk> {
     const { messages, ...rest } = options;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const response = await fetch(`${this.baseUrl}/v1/converse/${component}`, {
+      const response = await fetch(`${this.baseUrl}/v1/converse/${this.component}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildBody(messages, rest)),
@@ -151,14 +149,13 @@ export class Client {
   }
 
   async *stream(
-    component: string,
     promptOrMessages: string | MessageLike[],
     options: StreamOptions = {},
   ): AsyncGenerator<string> {
     const { onToolCall, ...rest } = options;
     const messages = normalizeInput(promptOrMessages);
 
-    for await (const chunk of this.converse(component, { messages, ...rest })) {
+    for await (const chunk of this.converse({ messages, ...rest })) {
       if (chunk.type === 'text') {
         yield chunk.text;
       } else if (chunk.type === 'tool_call' && onToolCall != null && chunk.tool_call != null) {
@@ -170,12 +167,11 @@ export class Client {
   }
 
   async chat(
-    component: string,
     promptOrMessages: string | MessageLike[],
     options: ChatOptions = {},
   ): Promise<string> {
     const parts: string[] = [];
-    for await (const text of this.stream(component, promptOrMessages, options)) {
+    for await (const text of this.stream(promptOrMessages, options)) {
       parts.push(text);
     }
     return parts.join('');
@@ -189,12 +185,50 @@ export class Client {
       throw new DaimonError(`HTTP ${response.status}: ${await response.text()}`);
     }
   }
+}
 
-  memory(store: string): MemoryStoreClient {
+export class Client {
+  private readonly baseUrl: string;
+  private readonly timeout: number;
+
+  constructor(options: ClientOptions = {}) {
+    this.baseUrl = (options.baseUrl ?? 'http://127.0.0.1:3500').replace(/\/$/, '');
+    this.timeout = options.timeout ?? 120_000;
+  }
+
+  llm(component = 'default'): LLMClient {
+    return new LLMClient(this.baseUrl, component, this.timeout);
+  }
+
+  async *converse(component = 'default', options: ConversationOptions): AsyncGenerator<Chunk> {
+    yield* this.llm(component).converse(options);
+  }
+
+  async *stream(
+    component = 'default',
+    promptOrMessages: string | MessageLike[],
+    options: StreamOptions = {},
+  ): AsyncGenerator<string> {
+    yield* this.llm(component).stream(promptOrMessages, options);
+  }
+
+  async chat(
+    component = 'default',
+    promptOrMessages: string | MessageLike[],
+    options: ChatOptions = {},
+  ): Promise<string> {
+    return this.llm(component).chat(promptOrMessages, options);
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    return this.llm().clearSession(sessionId);
+  }
+
+  memory(store = 'default'): MemoryStoreClient {
     return new MemoryStoreClient(this.baseUrl, store, this.timeout);
   }
 
-  graph(store: string): GraphStoreClient {
+  graph(store = 'default'): GraphStoreClient {
     return new GraphStoreClient(this.baseUrl, store, this.timeout);
   }
 }
