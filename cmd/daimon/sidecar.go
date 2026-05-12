@@ -84,6 +84,10 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 			vectorStores[comp.Name] = ms
 			slog.Info("registered vector store", "name", comp.Name, "type", comp.Type)
 			continue
+		} else if memory.HasVectorStore(comp.Type) {
+			// Type is registered but factory returned a real error — fail loudly.
+			_ = telShutdown(context.Background())
+			return nil, nil, fmt.Errorf("creating vector store %q: %w", comp.Name, storeErr)
 		}
 
 		// 4. Graph store registry.
@@ -91,6 +95,9 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 			graphStores[comp.Name] = gs
 			slog.Info("registered graph store", "name", comp.Name, "type", comp.Type)
 			continue
+		} else if memory.HasGraphStore(comp.Type) {
+			_ = telShutdown(context.Background())
+			return nil, nil, fmt.Errorf("creating graph store %q: %w", comp.Name, graphErr)
 		}
 
 		// 5. LLM registry (existing path).

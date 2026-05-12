@@ -104,7 +104,21 @@ func (s *Store) do(ctx context.Context, method, path string, body any) ([]byte, 
 }
 
 func (s *Store) ensureCollection(ctx context.Context) error {
-	_, status, err := s.do(ctx, http.MethodPut,
+	// Check whether the collection already exists before trying to create it.
+	// Qdrant returns 400 on PUT if the collection is present, which would
+	// cause New() to fail even when the store is fully operational.
+	_, status, err := s.do(ctx, http.MethodGet, "/collections/"+s.collection, nil)
+	if err != nil {
+		return fmt.Errorf("qdrant: check collection: %w", err)
+	}
+	if status == http.StatusOK {
+		return nil // already exists
+	}
+	if status != http.StatusNotFound {
+		return fmt.Errorf("qdrant: check collection status %d", status)
+	}
+
+	_, status, err = s.do(ctx, http.MethodPut,
 		"/collections/"+s.collection,
 		map[string]any{
 			"vectors": map[string]any{

@@ -24,6 +24,14 @@ func Register(storeType string, f StoreFactory) {
 	factories[storeType] = f
 }
 
+// HasVectorStore reports whether a factory for storeType has been registered.
+func HasVectorStore(storeType string) bool {
+	mu.RLock()
+	_, ok := factories[storeType]
+	mu.RUnlock()
+	return ok
+}
+
 // New instantiates a MemoryStore of the given type.
 func New(storeType string, cfg StoreConfig) (MemoryStore, error) {
 	mu.RLock()
@@ -41,6 +49,14 @@ func RegisterGraph(storeType string, f GraphFactory) {
 	graphMu.Lock()
 	defer graphMu.Unlock()
 	graphFactories[storeType] = f
+}
+
+// HasGraphStore reports whether a factory for storeType has been registered.
+func HasGraphStore(storeType string) bool {
+	graphMu.RLock()
+	_, ok := graphFactories[storeType]
+	graphMu.RUnlock()
+	return ok
 }
 
 // NewGraph instantiates a GraphStore of the given type.
