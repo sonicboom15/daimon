@@ -39,7 +39,8 @@ test {
 
 mavenPublishing {
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
-    signAllPublications()
+    // Sign only when the GPG key is present (Maven Central CI). Skipped for GitHub Packages.
+    if (findProperty('signingInMemoryKey')) signAllPublications()
 
     coordinates('io.github.sonicboom15', 'daimon-client', version as String)
 
