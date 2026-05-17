@@ -17,7 +17,9 @@ import (
 
 	// LLM providers.
 	_ "github.com/sonicboom15/daimon/internal/components/llm/anthropic"
+	_ "github.com/sonicboom15/daimon/internal/components/llm/gemini"
 	_ "github.com/sonicboom15/daimon/internal/components/llm/llamacpp"
+	_ "github.com/sonicboom15/daimon/internal/components/llm/mistral"
 	_ "github.com/sonicboom15/daimon/internal/components/llm/openai"
 
 	// Embedding components.

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.sonicboom15.daimon.LLMClientTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-05-17T13:33:40" hostname="DESKTOP-VD1RNAG" time="0.08">
+  <properties/>
+  <testcase name="testConverse_yieldsAllChunkTypes()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.028"/>
+  <testcase name="testChat_namedComponent_usesCorrectPath()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.006"/>
+  <testcase name="testChat_returnsCollectedText()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.006"/>
+  <testcase name="testStream_yieldsFragments()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.006"/>
+  <testcase name="testChat_withOptions_sendsParams()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.008"/>
+  <testcase name="testClearSession_callsDelete()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.009"/>
+  <testcase name="testStream_unknownComponent_404()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.008"/>
+  <testcase name="testChat_throwsOnError()" classname="io.github.sonicboom15.daimon.LLMClientTest" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
