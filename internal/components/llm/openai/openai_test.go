@@ -1,7 +1,7 @@
 // Copyright 2026 the Daimon authors.
 // SPDX-License-Identifier: Apache-2.0
 
-package mistral
+package openai
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 )
 
 func TestNew_missingAPIKey(t *testing.T) {
-	t.Setenv("MISTRAL_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
 	_, err := New(conversation.ComponentConfig{
 		Metadata: map[string]string{},
 	})
@@ -32,13 +32,12 @@ func TestNew_defaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.defaultModel != "mistral-large-latest" {
-		t.Errorf("want mistral-large-latest, got %s", c.defaultModel)
+	if c.defaultModel != "gpt-4o" {
+		t.Errorf("want gpt-4o, got %s", c.defaultModel)
 	}
 }
 
 func TestChat_textResponse(t *testing.T) {
-	// Fake OpenAI-compatible SSE endpoint.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
@@ -46,9 +45,9 @@ func TestChat_textResponse(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintln(w, `data: {"id":"1","choices":[{"delta":{"content":"Hello"},"index":0}],"object":"chat.completion.chunk"}`)
+		fmt.Fprintln(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}`)
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, `data: {"id":"1","choices":[{"delta":{"content":" world"},"finish_reason":"stop","index":0}],"object":"chat.completion.chunk"}`)
+		fmt.Fprintln(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}`)
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "data: [DONE]")
 	}))
@@ -58,7 +57,7 @@ func TestChat_textResponse(t *testing.T) {
 		Metadata: map[string]string{
 			"api_key":       "test-key",
 			"base_url":      srv.URL + "/v1",
-			"default_model": "mistral-small",
+			"default_model": "gpt-4o-mini",
 		},
 	})
 	if err != nil {
@@ -78,59 +77,24 @@ func TestChat_textResponse(t *testing.T) {
 		case conversation.ChunkText:
 			got = append(got, chunk.Text)
 		case conversation.ChunkError:
-			t.Fatalf("unexpected error: %s", chunk.Error)
+			t.Fatalf("unexpected error chunk: %s", chunk.Error)
 		}
 	}
 
-	if len(got) == 0 {
-		t.Fatal("expected text chunks")
-	}
 	combined := strings.Join(got, "")
 	if combined != "Hello world" {
 		t.Errorf("want 'Hello world', got %q", combined)
 	}
 }
 
-func TestChat_usesDefaultModel(t *testing.T) {
-	var gotModel string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Model string `json:"model"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		gotModel = body.Model
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintln(w, "data: [DONE]")
-	}))
-	defer srv.Close()
-
-	c, err := New(conversation.ComponentConfig{
-		Metadata: map[string]string{
-			"api_key":       "test-key",
-			"base_url":      srv.URL + "/v1",
-			"default_model": "mistral-medium",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ch, _ := c.Chat(context.Background(), conversation.Request{
-		Messages: []conversation.Message{{Role: conversation.RoleUser, Content: "hi"}},
-	})
-	for range ch {
-	}
-
-	if gotModel != "mistral-medium" {
-		t.Errorf("want mistral-medium, got %q", gotModel)
-	}
-}
-
 func TestChat_toolCall(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintln(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_xyz","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}`)
+		// First chunk: tool call start with id + name
+		fmt.Fprintln(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}`)
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":"tool_calls"}]}`)
+		// Second chunk: arguments fragment
+		fmt.Fprintln(w, `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":"tool_calls"}]}`)
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "data: [DONE]")
 	}))
@@ -163,8 +127,15 @@ func TestChat_toolCall(t *testing.T) {
 	if toolChunks[0].ToolCall.Name != "get_weather" {
 		t.Errorf("want get_weather, got %s", toolChunks[0].ToolCall.Name)
 	}
-	if toolChunks[0].ToolCall.ID != "call_xyz" {
-		t.Errorf("want call_xyz, got %s", toolChunks[0].ToolCall.ID)
+	if toolChunks[0].ToolCall.ID != "call_abc" {
+		t.Errorf("want call_abc, got %s", toolChunks[0].ToolCall.ID)
+	}
+	var input map[string]string
+	if err := json.Unmarshal(toolChunks[0].ToolCall.Input, &input); err != nil {
+		t.Fatalf("bad input JSON: %v", err)
+	}
+	if input["city"] != "Tokyo" {
+		t.Errorf("want city=Tokyo, got %q", input["city"])
 	}
 }
 
@@ -194,4 +165,35 @@ func TestChat_httpError(t *testing.T) {
 		}
 	}
 	t.Fatal("expected an error for 401 response")
+}
+
+func TestChat_usesDefaultModel(t *testing.T) {
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotModel = body.Model
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer srv.Close()
+
+	c, _ := New(conversation.ComponentConfig{
+		Metadata: map[string]string{
+			"api_key":       "test-key",
+			"base_url":      srv.URL + "/v1",
+			"default_model": "gpt-4o-mini",
+		},
+	})
+	ch, _ := c.Chat(context.Background(), conversation.Request{
+		Messages: []conversation.Message{{Role: conversation.RoleUser, Content: "hi"}},
+	})
+	for range ch {
+	}
+
+	if gotModel != "gpt-4o-mini" {
+		t.Errorf("want gpt-4o-mini, got %q", gotModel)
+	}
 }

@@ -51,17 +51,26 @@ func New(cfg conversation.ComponentConfig) (*Component, error) {
 		defaultModel = "gpt-4o"
 	}
 
+	baseURL := cfg.Metadata["base_url"]
+	makeClient := func(key string) openai.Client {
+		opts := []option.RequestOption{option.WithAPIKey(key)}
+		if baseURL != "" {
+			opts = append(opts, option.WithBaseURL(baseURL))
+		}
+		return openai.NewClient(opts...)
+	}
+
 	modelClients := make(map[string]openai.Client, len(cfg.Models))
 	for model, mc := range cfg.Models {
 		key := mc.APIKey
 		if key == "" {
 			key = defaultKey
 		}
-		modelClients[model] = openai.NewClient(option.WithAPIKey(key))
+		modelClients[model] = makeClient(key)
 	}
 
 	return &Component{
-		defaultClient: openai.NewClient(option.WithAPIKey(defaultKey)),
+		defaultClient: makeClient(defaultKey),
 		defaultModel:  defaultModel,
 		modelClients:  modelClients,
 		defaults:      cfg.Defaults,

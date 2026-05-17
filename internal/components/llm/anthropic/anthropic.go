@@ -51,17 +51,26 @@ func New(cfg conversation.ComponentConfig) (*Component, error) {
 		defaultModel = "claude-opus-4-7"
 	}
 
+	baseURL := cfg.Metadata["base_url"]
+	makeClient := func(key string) anthropic.Client {
+		opts := []option.RequestOption{option.WithAPIKey(key)}
+		if baseURL != "" {
+			opts = append(opts, option.WithBaseURL(baseURL))
+		}
+		return anthropic.NewClient(opts...)
+	}
+
 	modelClients := make(map[string]anthropic.Client, len(cfg.Models))
 	for model, mc := range cfg.Models {
 		key := mc.APIKey
 		if key == "" {
 			key = defaultKey
 		}
-		modelClients[model] = anthropic.NewClient(option.WithAPIKey(key))
+		modelClients[model] = makeClient(key)
 	}
 
 	return &Component{
-		defaultClient: anthropic.NewClient(option.WithAPIKey(defaultKey)),
+		defaultClient: makeClient(defaultKey),
 		defaultModel:  defaultModel,
 		modelClients:  modelClients,
 		defaults:      cfg.Defaults,
