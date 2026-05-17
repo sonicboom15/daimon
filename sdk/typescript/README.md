@@ -17,14 +17,18 @@ import { Client } from 'daimon-client';
 
 const client = new Client(); // default: http://127.0.0.1:3500
 
-const reply = await client.chat('claude', 'What is a daimon?');
+// Single LLM configured — no name needed
+const reply = await client.llm().chat('What is a daimon?');
 console.log(reply);
+
+// Multiple LLMs configured — pick by name
+const reply2 = await client.llm('claude').chat('What is a daimon?');
 ```
 
 ## Streaming
 
 ```typescript
-for await (const text of client.stream('claude', 'Tell me a story.')) {
+for await (const text of client.llm().stream('Tell me a story.')) {
   process.stdout.write(text);
 }
 ```
@@ -34,7 +38,7 @@ for await (const text of client.stream('claude', 'Tell me a story.')) {
 Pass an array of messages to carry history yourself:
 
 ```typescript
-const reply = await client.chat('claude', [
+const reply = await client.llm().chat([
   { role: 'user',      content: 'My name is Alice.' },
   { role: 'assistant', content: 'Nice to meet you, Alice!' },
   { role: 'user',      content: 'What is my name?' },
@@ -46,11 +50,12 @@ const reply = await client.chat('claude', [
 Let the sidecar maintain history server-side with a `session_id`:
 
 ```typescript
-await client.chat('claude', 'My favourite colour is blue.', { session_id: 'chat-1' });
-const reply = await client.chat('claude', 'What is my favourite colour?', { session_id: 'chat-1' });
+const llm = client.llm();
+await llm.chat('My favourite colour is blue.', { session_id: 'chat-1' });
+const reply = await llm.chat('What is my favourite colour?', { session_id: 'chat-1' });
 // reply contains "blue"
 
-await client.clearSession('chat-1');
+await llm.clearSession('chat-1');
 ```
 
 ## Inference parameters
@@ -58,7 +63,7 @@ await client.clearSession('chat-1');
 All sampling parameters are optional and fall back to the component's configured defaults:
 
 ```typescript
-const reply = await client.chat('gpt4o', 'Summarise this.', {
+const reply = await client.llm('gpt4o').chat('Summarise this.', {
   model:       'gpt-4o',
   temperature: 0.2,
   max_tokens:  256,
@@ -122,25 +127,24 @@ await kg.deleteNode('alice');
 | `baseUrl` | `string` | `http://127.0.0.1:3500` |
 | `timeout` | `number` (ms) | `120000` |
 
-### `client.chat(component, prompt, options?)`
+### `client.llm(component?)` → `LLMClient`
 
-Returns the full response text as `Promise<string>`.
+Returns a client scoped to the named LLM component. Omit `component` (or pass `"default"`) to use whichever single LLM is configured.
+
+| Method | Description |
+|---|---|
+| `chat(prompt, options?)` | Returns full response text as `Promise<string>`. |
+| `stream(prompt, options?)` | `AsyncGenerator<string>` of text fragments. |
+| `converse(options)` | `AsyncGenerator<Chunk>` — full control over all chunk types. |
+| `clearSession(sessionId)` | Delete server-side session history. |
 
 `prompt` can be a `string` or an array of `Message`-like objects.
 
-### `client.stream(component, prompt, options?)`
+### Shorthand methods on `Client`
 
-Returns an `AsyncGenerator<string>` that yields text fragments as they arrive.
+`client.chat(component?, prompt, options?)`, `client.stream(...)`, `client.converse(...)`, and `client.clearSession(...)` are convenience wrappers that call `client.llm(component).*`. They exist for quick scripts; prefer the `llm()` accessor for anything beyond a one-liner.
 
-### `client.converse(component, options)`
-
-Low-level method returning an `AsyncGenerator<Chunk>` for full control over chunk types (`text`, `tool_call`, `done`, `error`).
-
-### `client.clearSession(sessionId)`
-
-Deletes server-side session history. Returns `Promise<void>`. Safe to call on a non-existent session.
-
-### `client.memory(store)` → `MemoryStoreClient`
+### `client.memory(store?)` → `MemoryStoreClient`
 
 Returns a client scoped to the named vector store.
 

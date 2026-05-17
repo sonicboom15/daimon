@@ -1,4 +1,4 @@
-"""Unit tests for daimon_client.Client — uses httpx mock transport, no real server."""
+"""Unit tests for daimon_client.Client and LLMClient — uses httpx mock transport, no real server."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from daimon_client import Client
+from daimon_client import Client, LLMClient
 from daimon_client._types import Chunk, DaimonError, ToolCall
 
 
@@ -187,6 +187,97 @@ class TestSession:
         assert len(captured) == 1
         assert captured[0].method == "DELETE"
         assert captured[0].url.path == "/v1/sessions/sess-abc"
+
+
+class TestLLMClient:
+    """Tests for LLMClient — obtained via client.llm(name) or directly."""
+
+    def _make(self, body: bytes, component: str = "my-llm", status: int = 200):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(status, content=body)
+
+        http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        llm = LLMClient("http://127.0.0.1:3500", component, lambda: http)
+        return llm, captured
+
+    def test_chat_returns_text(self):
+        llm, _ = self._make(_sse_body(
+            {"type": "text", "text": "Hello"},
+            {"type": "text", "text": " world"},
+            {"type": "done"},
+        ))
+        assert llm.chat("hi") == "Hello world"
+
+    def test_stream_yields_fragments(self):
+        llm, _ = self._make(_sse_body(
+            {"type": "text", "text": "A"},
+            {"type": "text", "text": "B"},
+            {"type": "done"},
+        ))
+        assert list(llm.stream("hi")) == ["A", "B"]
+
+    def test_converse_yields_chunks(self):
+        llm, _ = self._make(_sse_body(
+            {"type": "text", "text": "hi"},
+            {"type": "done"},
+        ))
+        chunks = list(llm.converse(messages=[{"role": "user", "content": "hi"}]))
+        assert [c.type for c in chunks] == ["text", "done"]
+
+    def test_routes_to_correct_component_url(self):
+        llm, captured = self._make(
+            _sse_body({"type": "done"}), component="claude"
+        )
+        llm.chat("hi")
+        assert captured[0].url.path == "/v1/converse/claude"
+
+    def test_clear_session_sends_delete(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(204, content=b"")
+
+        http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        llm = LLMClient("http://127.0.0.1:3500", "claude", lambda: http)
+        llm.clear_session("sess-123")
+
+        assert captured[0].method == "DELETE"
+        assert captured[0].url.path == "/v1/sessions/sess-123"
+
+    def test_raises_on_error_chunk(self):
+        llm, _ = self._make(_sse_body({"type": "error", "error": "boom"}))
+        with pytest.raises(DaimonError, match="boom"):
+            list(llm.stream("hi"))
+
+    def test_client_llm_default_uses_default_component(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, content=_sse_body({"type": "done"}))
+
+        client = Client()
+        client._http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        client.llm().chat("hi")
+
+        assert captured[0].url.path == "/v1/converse/default"
+
+    def test_client_llm_named_uses_named_component(self):
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, content=_sse_body({"type": "done"}))
+
+        client = Client()
+        client._http = httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0)
+        client.llm("gpt4o").chat("hi")
+
+        assert captured[0].url.path == "/v1/converse/gpt4o"
 
 
 class TestContextManager:

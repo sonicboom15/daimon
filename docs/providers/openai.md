@@ -52,7 +52,7 @@ components:
 Any model available through the OpenAI API can be specified in `default_model` or overridden per-request:
 
 ```python
-reply = client.chat("gpt4o", "Hello", model="o1-preview")
+reply = client.llm("gpt4o").chat("Hello", model="o1-preview")
 ```
 
 Common choices:

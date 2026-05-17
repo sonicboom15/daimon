@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Client } from '../src/client.js';
+import { Client, LLMClient } from '../src/client.js';
 import { DaimonError, ToolCall } from '../src/types.js';
 
 function makeSSEStream(events: string[]): ReadableStream<Uint8Array> {
@@ -382,6 +382,91 @@ describe('Client.clearSession', () => {
 
     const client = new Client();
     await expect(client.clearSession('nonexistent')).rejects.toThrow(DaimonError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LLMClient
+// ---------------------------------------------------------------------------
+
+describe('LLMClient (via client.llm)', () => {
+  it('routes to the named component URL', async () => {
+    const mock = stubFetch(makeSSEStream([JSON.stringify({ type: 'done' })]));
+    const client = new Client();
+    await client.llm('claude').chat('hi');
+    const url = (mock.mock.calls[0] as [string])[0];
+    expect(url).toBe('http://127.0.0.1:3500/v1/converse/claude');
+  });
+
+  it('defaults to "default" component when no name given', async () => {
+    const mock = stubFetch(makeSSEStream([JSON.stringify({ type: 'done' })]));
+    const client = new Client();
+    await client.llm().chat('hi');
+    const url = (mock.mock.calls[0] as [string])[0];
+    expect(url).toBe('http://127.0.0.1:3500/v1/converse/default');
+  });
+
+  it('chat returns joined text', async () => {
+    stubFetch(makeSSEStream([
+      JSON.stringify({ type: 'text', text: 'Hello' }),
+      JSON.stringify({ type: 'text', text: ' world' }),
+      JSON.stringify({ type: 'done' }),
+    ]));
+    const result = await new Client().llm('claude').chat('hi');
+    expect(result).toBe('Hello world');
+  });
+
+  it('stream yields text fragments', async () => {
+    stubFetch(makeSSEStream([
+      JSON.stringify({ type: 'text', text: 'A' }),
+      JSON.stringify({ type: 'text', text: 'B' }),
+      JSON.stringify({ type: 'done' }),
+    ]));
+    const texts: string[] = [];
+    for await (const t of new Client().llm('claude').stream('hi')) {
+      texts.push(t);
+    }
+    expect(texts).toEqual(['A', 'B']);
+  });
+
+  it('converse yields raw chunks', async () => {
+    stubFetch(makeSSEStream([
+      JSON.stringify({ type: 'text', text: 'hi' }),
+      JSON.stringify({ type: 'done' }),
+    ]));
+    const chunks = [];
+    for await (const c of new Client().llm('claude').converse({ messages: [{ role: 'user', content: 'hi' }] })) {
+      chunks.push(c);
+    }
+    expect(chunks.map((c) => c.type)).toEqual(['text', 'done']);
+  });
+
+  it('clearSession sends DELETE to correct path', async () => {
+    const mock = vi.fn().mockResolvedValueOnce({ ok: true, status: 204, text: () => Promise.resolve('') });
+    vi.stubGlobal('fetch', mock);
+    await new Client().llm('claude').clearSession('sess-abc');
+    const [url, init] = mock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://127.0.0.1:3500/v1/sessions/sess-abc');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('throws DaimonError on error chunk', async () => {
+    stubFetch(makeSSEStream([JSON.stringify({ type: 'error', error: 'boom' })]));
+    await expect(async () => {
+      for await (const _ of new Client().llm('claude').stream('hi')) { /* noop */ }
+    }).rejects.toThrow('boom');
+  });
+
+  it('can be instantiated standalone', async () => {
+    const mock = stubFetch(makeSSEStream([
+      JSON.stringify({ type: 'text', text: 'ok' }),
+      JSON.stringify({ type: 'done' }),
+    ]));
+    const llm = new LLMClient('http://127.0.0.1:3500', 'my-llm', 5000);
+    const result = await llm.chat('hi');
+    expect(result).toBe('ok');
+    const url = (mock.mock.calls[0] as [string])[0];
+    expect(url).toContain('/v1/converse/my-llm');
   });
 });
 

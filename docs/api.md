@@ -216,8 +216,8 @@ curl -sN http://127.0.0.1:3500/v1/converse/claude \
 
 ```python
 client = daimon.Client()
-client.chat("claude", "My name is Alice.", session_id="chat-1")
-reply = client.chat("claude", "What is my name?", session_id="chat-1")
+client.llm("claude").chat("My name is Alice.", session_id="chat-1")
+reply = client.llm("claude").chat("What is my name?", session_id="chat-1")
 # reply == "Your name is Alice."
 
 client.clear_session("chat-1")  # remove history when done
@@ -227,8 +227,8 @@ client.clear_session("chat-1")  # remove history when done
 
 ```typescript
 const client = new Client();
-await client.chat('claude', 'My name is Alice.', { session_id: 'chat-1' });
-const reply = await client.chat('claude', 'What is my name?', { session_id: 'chat-1' });
+await client.llm('claude').chat('My name is Alice.', { session_id: 'chat-1' });
+const reply = await client.llm('claude').chat('What is my name?', { session_id: 'chat-1' });
 await client.clearSession('chat-1');
 ```
 

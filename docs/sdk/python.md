@@ -18,8 +18,8 @@ pip install daimon-client
 import daimon_client as daimon
 
 with daimon.Client() as client:
-    for text in client.stream("claude", "What is a daimon?"):
-        print(text, end="", flush=True)
+    reply = client.llm('claude').chat('What is a daimon?')
+    print(reply)
 ```
 
 ---
@@ -39,8 +39,8 @@ Use as a context manager to reuse the HTTP connection across calls:
 
 ```python
 with daimon.Client() as client:
-    reply1 = client.chat("claude", "Hello")
-    reply2 = client.chat("gpt4o", "World")
+    reply1 = client.llm('claude').chat('Hello')
+    reply2 = client.llm('gpt4o').chat('World')
 ```
 
 Without a context manager, a new connection is created per call.
@@ -49,28 +49,65 @@ Without a context manager, a new connection is created per call.
 
 ```python
 async with daimon.AsyncClient() as client:
-    async for text in client.stream("claude", "Hello"):
+    async for text in client.llm('claude').stream('Hello'):
         print(text, end="", flush=True)
 ```
 
-Both clients expose the same three methods: `stream`, `chat`, and `converse`.
-
 ---
 
-## Methods
+## `LLMClient`
+
+`client.llm(component)` returns an `LLMClient` scoped to the named component. All LLM
+methods live here. Omit the component name to use whichever single LLM is configured.
+
+```python
+llm = client.llm('claude')   # or client.llm() if only one LLM is configured
+reply = llm.chat('What is a daimon?')
+```
+
+### `chat()` — full response string
+
+Collects all text chunks and returns the complete response as a single string.
+
+```python
+reply = client.llm('gpt4o').chat('What is the capital of France?')
+print(reply)  # "The capital of France is Paris."
+```
+
+`prompt` can be a plain string or a list of message objects:
+
+```python
+reply = client.llm('claude').chat([
+    {'role': 'user',      'content': 'My name is Alice.'},
+    {'role': 'assistant', 'content': 'Nice to meet you, Alice!'},
+    {'role': 'user',      'content': 'What is my name?'},
+])
+```
 
 ### `stream()` — text fragments
 
-Yields `str` fragments as they arrive. The simplest way to print a streaming response.
+Yields `str` fragments as they arrive.
 
 ```python
-for text in client.stream(component, prompt_or_messages, **kwargs):
+for text in client.llm('claude').stream('Tell me a story.'):
+    print(text, end="", flush=True)
+```
+
+**Observing tool calls:**
+
+```python
+def log_tool(tc: daimon.ToolCall) -> None:
+    print(f"\n[calling: {tc.name}({tc.input})]")
+
+for text in client.llm('claude').stream(
+    "What's the weather in Tokyo?",
+    on_tool_call=log_tool,
+):
     print(text, end="", flush=True)
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `component` | `str` | Component name from config (e.g. `"claude"`) |
 | `prompt_or_messages` | `str` \| `list[Message \| dict]` | A plain string or full message history |
 | `on_tool_call` | `Callable[[ToolCall], None]` | Called for each tool call the model makes |
 | `session_id` | `str` | Server-side session ID (see [Sessions](#sessions)) |
@@ -79,71 +116,20 @@ for text in client.stream(component, prompt_or_messages, **kwargs):
 
 Raises `DaimonError` on a stream error chunk.
 
-**Observing tool calls without handling them:**
-
-```python
-def log_tool(tc: daimon.ToolCall) -> None:
-    print(f"\n[calling: {tc.name}({tc.input})]")
-
-for text in client.stream("claude", "What's the weather in Tokyo?", on_tool_call=log_tool):
-    print(text, end="", flush=True)
-```
-
-### `chat()` — full response string
-
-Collects all text chunks and returns the complete response as a single string. Convenient for non-interactive use.
-
-```python
-reply = client.chat(component, prompt_or_messages, **kwargs)
-```
-
-```python
-answer = client.chat("gpt4o", "What is the capital of France?")
-print(answer)  # "The capital of France is Paris."
-```
-
 ### `converse()` — raw chunk stream
 
-Yields `Chunk` objects. Use this when you need full control — access to tool call metadata, error details, or the done signal.
+Yields `Chunk` objects for full control over chunk types.
 
 ```python
-for chunk in client.converse(component, messages=messages, **kwargs):
-    if chunk.type == "text":
+for chunk in client.llm('claude').converse(
+    messages=[{'role': 'user', 'content': 'Hello'}]
+):
+    if chunk.type == 'text':
         print(chunk.text, end="", flush=True)
-    elif chunk.type == "tool_call":
+    elif chunk.type == 'tool_call':
         print(f"\n[tool: {chunk.tool_call.name}]")
-    elif chunk.type == "error":
+    elif chunk.type == 'error':
         raise RuntimeError(chunk.error)
-```
-
----
-
-## Sessions
-
-Pass `session_id` to any call and daimon maintains conversation history server-side. You only need to send the new user turn — no need to replay the full history from the client.
-
-```python
-client = daimon.Client()
-
-# Turn 1 — introduce a fact
-client.chat("claude", "My name is Alice.", session_id="chat-1")
-
-# Turn 2 — server prepends the stored history automatically
-reply = client.chat("claude", "What is my name?", session_id="chat-1")
-# reply: "Your name is Alice."
-
-# Clean up when done
-client.clear_session("chat-1")
-```
-
-`session_id` works with both `chat()` and `stream()`:
-
-```python
-# stream() turn 1
-list(client.stream("claude", "My favourite colour is blue.", session_id="s1"))
-
-# chat() turn 2 — server remembers the colour
-reply = client.chat("claude", "What is my favourite colour?", session_id="s1")
 ```
 
 ### `clear_session(session_id)`
@@ -151,13 +137,46 @@ reply = client.chat("claude", "What is my favourite colour?", session_id="s1")
 Deletes server-side session history. Returns `None`. Safe to call on a session that does not exist.
 
 ```python
-client.clear_session("chat-1")
+client.llm().clear_session('chat-1')
 ```
 
-Async equivalent:
+---
+
+## Shorthand methods on `Client`
+
+`client.chat(component, prompt, **kwargs)`, `client.stream(...)`, `client.converse(...)`,
+and `client.clear_session(...)` are convenience wrappers that call `client.llm(component).*`.
+They exist for quick scripts; prefer the `llm()` accessor for anything beyond a one-liner.
+
+---
+
+## Sessions
+
+Pass `session_id` to any call and daimon maintains conversation history server-side. You
+only need to send the new user turn — no need to replay the full history from the client.
 
 ```python
-await async_client.clear_session("chat-1")
+llm = client.llm('claude')
+
+# Turn 1 — introduce a fact
+llm.chat('My name is Alice.', session_id='chat-1')
+
+# Turn 2 — server prepends the stored history automatically
+reply = llm.chat('What is my name?', session_id='chat-1')
+# reply: "Your name is Alice."
+
+# Clean up when done
+llm.clear_session('chat-1')
+```
+
+`session_id` works with both `chat()` and `stream()`:
+
+```python
+# stream() turn 1
+list(client.llm('claude').stream('My favourite colour is blue.', session_id='s1'))
+
+# chat() turn 2 — server remembers the colour
+reply = client.llm('claude').chat('What is my favourite colour?', session_id='s1')
 ```
 
 Sessions are in-memory and cleared when the sidecar restarts.
@@ -166,7 +185,8 @@ Sessions are in-memory and cleared when the sidecar restarts.
 
 ## Inference parameters
 
-All inference parameters are optional keyword arguments on `stream`, `chat`, and `converse`. They override any defaults set in the server config.
+All inference parameters are optional keyword arguments on `stream`, `chat`, and `converse`.
+They override any defaults set in the server config.
 
 | Parameter | Type | Providers | Description |
 |---|---|---|---|
@@ -182,13 +202,12 @@ All inference parameters are optional keyword arguments on `stream`, `chat`, and
 | `seed` | `int` | OpenAI, llamacpp | RNG seed |
 
 ```python
-reply = client.chat(
-    "gpt4o",
-    "Write a haiku about Python.",
-    model="gpt-4o",
+reply = client.llm('gpt4o').chat(
+    'Write a haiku about Python.',
+    model='gpt-4o',
     temperature=0.9,
     max_tokens=64,
-    stop=["\n\n"],
+    stop=['\n\n'],
 )
 ```
 
@@ -209,20 +228,18 @@ class Message:
 
 ```python
 messages = [
-    daimon.Message(role="system",    content="You are a helpful assistant."),
-    daimon.Message(role="user",      content="Hello!"),
-    daimon.Message(role="assistant", content="Hi! How can I help you today?"),
-    daimon.Message(role="user",      content="What is 2+2?"),
+    daimon.Message(role='system',    content='You are a helpful assistant.'),
+    daimon.Message(role='user',      content='Hello!'),
+    daimon.Message(role='assistant', content='Hi! How can I help you today?'),
+    daimon.Message(role='user',      content='What is 2+2?'),
 ]
-reply = client.chat("claude", messages)
+reply = client.llm('claude').chat(messages)
 ```
 
 Plain dicts also work anywhere a `Message` is expected:
 
 ```python
-messages = [
-    {"role": "user", "content": "Hello!"},
-]
+messages = [{'role': 'user', 'content': 'Hello!'}]
 ```
 
 ### `Tool`
@@ -237,16 +254,16 @@ class Tool:
 
 ```python
 weather_tool = daimon.Tool(
-    name="get_weather",
-    description="Get the current weather for a city.",
+    name='get_weather',
+    description='Get the current weather for a city.',
     input_schema={
-        "type": "object",
-        "properties": {"city": {"type": "string"}},
-        "required": ["city"],
+        'type': 'object',
+        'properties': {'city': {'type': 'string'}},
+        'required': ['city'],
     },
 )
 
-for text in client.stream("claude", "Weather in Tokyo?", tools=[weather_tool]):
+for text in client.llm('claude').stream('Weather in Tokyo?', tools=[weather_tool]):
     print(text, end="", flush=True)
 ```
 
@@ -275,14 +292,13 @@ class Chunk:
 
 ### `DaimonError`
 
-Raised by `stream()` when the server emits an error chunk.
+Raised by `stream()` and `chat()` when the server emits an error chunk or returns a non-2xx status.
 
 ```python
 try:
-    for text in client.stream("claude", "Hello"):
-        print(text, end="")
+    reply = client.llm('claude').chat('Hello')
 except daimon.DaimonError as e:
-    print(f"Error: {e}")
+    print(f'Error: {e}')
 ```
 
 ---
@@ -295,22 +311,23 @@ except daimon.DaimonError as e:
 import daimon_client as daimon
 
 messages: list[daimon.Message] = [
-    daimon.Message(role="system", content="You are a helpful assistant."),
+    daimon.Message(role='system', content='You are a helpful assistant.'),
 ]
 
 with daimon.Client() as client:
+    llm = client.llm('claude')
     while True:
-        user_input = input("You: ")
-        messages.append(daimon.Message(role="user", content=user_input))
+        user_input = input('You: ')
+        messages.append(daimon.Message(role='user', content=user_input))
 
-        print("Claude: ", end="", flush=True)
-        reply = ""
-        for text in client.stream("claude", messages):
-            print(text, end="", flush=True)
+        print('Claude: ', end='', flush=True)
+        reply = ''
+        for text in llm.stream(messages):
+            print(text, end='', flush=True)
             reply += text
         print()
 
-        messages.append(daimon.Message(role="assistant", content=reply))
+        messages.append(daimon.Message(role='assistant', content=reply))
 ```
 
 ### Async streaming
@@ -321,41 +338,39 @@ import daimon_client as daimon
 
 async def main():
     async with daimon.AsyncClient() as client:
-        async for text in client.stream(
-            "gpt4o",
-            "Explain async/await in Python.",
+        async for text in client.llm('gpt4o').stream(
+            'Explain async/await in Python.',
             temperature=0.5,
             max_tokens=200,
         ):
-            print(text, end="", flush=True)
+            print(text, end='', flush=True)
     print()
 
 asyncio.run(main())
 ```
 
-### Structured output via low-level `converse`
+### Structured output via `converse()`
 
 ```python
 import json, daimon_client as daimon
 
 extractor = daimon.Tool(
-    name="extract_entities",
-    description="Extract named entities from text.",
+    name='extract_entities',
+    description='Extract named entities from text.',
     input_schema={
-        "type": "object",
-        "properties": {
-            "people": {"type": "array", "items": {"type": "string"}},
-            "places": {"type": "array", "items": {"type": "string"}},
+        'type': 'object',
+        'properties': {
+            'people': {'type': 'array', 'items': {'type': 'string'}},
+            'places': {'type': 'array', 'items': {'type': 'string'}},
         },
     },
 )
 
 with daimon.Client() as client:
-    for chunk in client.converse(
-        "claude",
-        messages=[{"role": "user", "content": "Alice met Bob in Paris last Tuesday."}],
+    for chunk in client.llm('claude').converse(
+        messages=[{'role': 'user', 'content': 'Alice met Bob in Paris last Tuesday.'}],
         tools=[extractor],
     ):
-        if chunk.type == "tool_call":
+        if chunk.type == 'tool_call':
             print(json.dumps(chunk.tool_call.input, indent=2))
 ```

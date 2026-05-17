@@ -14,8 +14,12 @@ pip install daimon-client
 from daimon_client import Client
 
 with Client(base_url="http://localhost:3500") as c:
-    reply = c.chat("claude", "What is a daimon?")
+    # Single LLM configured — no name needed
+    reply = c.llm().chat("What is a daimon?")
     print(reply)
+
+    # Multiple LLMs configured — pick by name
+    reply = c.llm("claude").chat("What is a daimon?")
 ```
 
 ### Async
@@ -26,7 +30,7 @@ from daimon_client import AsyncClient
 
 async def main():
     async with AsyncClient(base_url="http://localhost:3500") as c:
-        reply = await c.chat("claude", "What is a daimon?")
+        reply = await c.llm().chat("What is a daimon?")
         print(reply)
 
 asyncio.run(main())
@@ -36,7 +40,7 @@ asyncio.run(main())
 
 ```python
 with Client() as c:
-    for text in c.stream("claude", "Tell me a story."):
+    for text in c.llm().stream("Tell me a story."):
         print(text, end="", flush=True)
 ```
 
@@ -45,7 +49,7 @@ with Client() as c:
 Pass a list of messages to carry history yourself:
 
 ```python
-reply = c.chat("claude", [
+reply = c.llm().chat([
     {"role": "user",      "content": "My name is Alice."},
     {"role": "assistant", "content": "Nice to meet you, Alice!"},
     {"role": "user",      "content": "What is my name?"},
@@ -57,11 +61,12 @@ reply = c.chat("claude", [
 Let the sidecar maintain history server-side with a `session_id`:
 
 ```python
-c.chat("claude", "My favourite colour is blue.", session_id="chat-1")
-reply = c.chat("claude", "What is my favourite colour?", session_id="chat-1")
+llm = c.llm()
+llm.chat("My favourite colour is blue.", session_id="chat-1")
+reply = llm.chat("What is my favourite colour?", session_id="chat-1")
 # reply contains "blue"
 
-c.clear_session("chat-1")
+llm.clear_session("chat-1")
 ```
 
 ## Inference parameters
@@ -69,7 +74,7 @@ c.clear_session("chat-1")
 All sampling parameters are optional and fall back to the component's configured defaults:
 
 ```python
-reply = c.chat("gpt4o", "Summarise this.", model="gpt-4o", temperature=0.2, max_tokens=256)
+reply = c.llm("gpt4o").chat("Summarise this.", model="gpt-4o", temperature=0.2, max_tokens=256)
 ```
 
 ## Vector store (memory)
@@ -135,21 +140,26 @@ kg.delete_node("alice")
 
 Use as a context manager (`with Client() as c`) or call `c.close()` manually.
 
-### `c.chat(component, prompt, **kwargs)` → `str`
+### `c.llm(component="default")` → `LLMClient`
 
-Returns the full response text.
+Returns a client scoped to the named LLM component. Omit `component` to use whichever single LLM is configured.
+
+| Method | Description |
+|---|---|
+| `chat(prompt, **kwargs)` → `str` | Send and return the full text response. |
+| `stream(prompt, **kwargs)` → `Iterator[str]` | Yield text fragments as they arrive. |
+| `converse(*, messages, **kwargs)` → `Iterator[Chunk]` | Raw chunk stream for full control. |
+| `clear_session(session_id)` | Delete server-side session history. |
 
 `prompt` can be a `str` or a list of `{"role": ..., "content": ...}` dicts.
 
-### `c.stream(component, prompt, **kwargs)` → `Iterator[str]`
+### Shorthand methods on `Client`
 
-Yields text fragments as they arrive.
+`c.chat(component, prompt, **kwargs)`, `c.stream(...)`, `c.converse(...)`, and `c.clear_session(...)` are convenience wrappers that call `c.llm(component).*`. They exist for quick scripts; prefer the `llm()` accessor for anything beyond a one-liner.
 
-### `c.clear_session(session_id)` → `None`
+`AsyncClient` exposes the same API with `async def` methods and `AsyncLLMClient` via `c.llm()`.
 
-Deletes server-side session history. Safe to call on a non-existent session.
-
-### `c.memory(store)` → `MemoryStoreClient`
+### `c.memory(store="default")` → `MemoryStoreClient`
 
 Returns a client scoped to the named vector store.
 

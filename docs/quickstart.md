@@ -129,7 +129,7 @@ INFO daimon listening addr=127.0.0.1:3500
     import daimon_client as daimon
 
     with daimon.Client() as client:
-        for text in client.stream("claude", "What is a daimon?"):
+        for text in client.llm().stream("What is a daimon?"):
             print(text, end="", flush=True)
     ```
 
@@ -143,7 +143,7 @@ INFO daimon listening addr=127.0.0.1:3500
     import { Client } from 'daimon-client';
 
     const client = new Client();
-    for await (const text of client.stream('claude', 'What is a daimon?')) {
+    for await (const text of client.llm().stream('What is a daimon?')) {
       process.stdout.write(text);
     }
     ```
@@ -156,7 +156,7 @@ INFO daimon listening addr=127.0.0.1:3500
 
     async def main():
         async with daimon.AsyncClient() as client:
-            async for text in client.stream("claude", "What is a daimon?"):
+            async for text in client.llm().stream("What is a daimon?"):
                 print(text, end="", flush=True)
 
     asyncio.run(main())

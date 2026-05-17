@@ -117,8 +117,7 @@ def on_tool(tc: daimon.ToolCall) -> None:
     print(f"\n→ {tc.name}({tc.input})", flush=True)
 
 with daimon.Client() as client:
-    for text in client.stream(
-        "claude",
+    for text in client.llm("claude").stream(
         "List the files in /tmp and summarise what you find.",
         on_tool_call=on_tool,
     ):
@@ -149,7 +148,7 @@ search_tool = daimon.Tool(
     },
 )
 
-for chunk in client.converse("claude", messages=messages, tools=[search_tool]):
+for chunk in client.llm("claude").converse(messages=messages, tools=[search_tool]):
     if chunk.type == "tool_call":
         # Execute the tool yourself and append the result to messages
         result = my_search(chunk.tool_call.input["query"])

@@ -19,7 +19,7 @@ import { Client } from 'daimon-client';
 
 const client = new Client(); // default: http://127.0.0.1:3500
 
-const reply = await client.chat('claude', 'What is a daimon?');
+const reply = await client.llm('claude').chat('What is a daimon?');
 console.log(reply);
 ```
 
@@ -45,14 +45,14 @@ const client = new Client({
 Collects all text chunks and returns the complete response as a `Promise<string>`.
 
 ```typescript
-const reply = await client.chat('gpt4o', 'What is the capital of France?');
+const reply = await client.llm('gpt4o').chat('What is the capital of France?');
 console.log(reply); // "The capital of France is Paris."
 ```
 
 `prompt` can be a plain string or an array of message objects:
 
 ```typescript
-const reply = await client.chat('claude', [
+const reply = await client.llm('claude').chat([
   { role: 'user',      content: 'My name is Alice.' },
   { role: 'assistant', content: 'Nice to meet you, Alice!' },
   { role: 'user',      content: 'What is my name?' },
@@ -64,7 +64,7 @@ const reply = await client.chat('claude', [
 Returns an `AsyncGenerator<string>` that yields text fragments as they arrive.
 
 ```typescript
-for await (const text of client.stream('claude', 'Tell me a story.')) {
+for await (const text of client.llm('claude').stream('Tell me a story.')) {
   process.stdout.write(text);
 }
 ```
@@ -72,7 +72,7 @@ for await (const text of client.stream('claude', 'Tell me a story.')) {
 **Observing tool calls:**
 
 ```typescript
-for await (const text of client.stream('claude', "What's the weather in Tokyo?", {
+for await (const text of client.llm('claude').stream("What's the weather in Tokyo?", {
   onToolCall: (tc) => console.log(`[tool: ${tc.name}]`),
 })) {
   process.stdout.write(text);
@@ -84,7 +84,7 @@ for await (const text of client.stream('claude', "What's the weather in Tokyo?",
 Returns an `AsyncGenerator<Chunk>` for full control over chunk types.
 
 ```typescript
-for await (const chunk of client.converse('claude', { messages: [{ role: 'user', content: 'Hello' }] })) {
+for await (const chunk of client.llm('claude').converse({ messages: [{ role: 'user', content: 'Hello' }] })) {
   if (chunk.type === 'text')       process.stdout.write(chunk.text);
   if (chunk.type === 'tool_call')  console.log('[tool]', chunk.toolCall?.name);
   if (chunk.type === 'error')      throw new Error(chunk.error);
@@ -96,7 +96,7 @@ for await (const chunk of client.converse('claude', { messages: [{ role: 'user',
 Deletes server-side session history. Returns `Promise<void>`. Safe to call on a session that does not exist.
 
 ```typescript
-await client.clearSession('chat-1');
+await client.llm().clearSession('chat-1');
 ```
 
 ---
@@ -107,26 +107,26 @@ Pass `session_id` in any call and the sidecar maintains conversation history ser
 
 ```typescript
 // Turn 1 — introduce a fact
-await client.chat('claude', 'My name is Alice.', { session_id: 'chat-1' });
+await client.llm('claude').chat('My name is Alice.', { session_id: 'chat-1' });
 
 // Turn 2 — server prepends the stored history automatically
-const reply = await client.chat('claude', 'What is my name?', { session_id: 'chat-1' });
+const reply = await client.llm('claude').chat('What is my name?', { session_id: 'chat-1' });
 // reply: "Your name is Alice."
 
 // Clean up when done
-await client.clearSession('chat-1');
+await client.llm().clearSession('chat-1');
 ```
 
 `session_id` is supported on both `chat()` and `stream()`:
 
 ```typescript
 // stream() turn 1
-for await (const text of client.stream('claude', 'My favourite colour is blue.', { session_id: 's1' })) {
+for await (const text of client.llm('claude').stream('My favourite colour is blue.', { session_id: 's1' })) {
   process.stdout.write(text);
 }
 
 // chat() turn 2 — server remembers the colour
-const reply = await client.chat('claude', 'What is my favourite colour?', { session_id: 's1' });
+const reply = await client.llm('claude').chat('What is my favourite colour?', { session_id: 's1' });
 ```
 
 Sessions are in-memory and cleared when the sidecar restarts.
@@ -153,7 +153,7 @@ All parameters are optional and fall back to the component's configured defaults
 | `onToolCall` | `(tc: ToolCall) => void` | stream only | Called when the model invokes a tool |
 
 ```typescript
-const reply = await client.chat('gpt4o', 'Write a haiku about Go.', {
+const reply = await client.llm('gpt4o').chat('Write a haiku about Go.', {
   model:       'gpt-4o',
   temperature: 0.9,
   max_tokens:  64,
@@ -204,7 +204,7 @@ Thrown by `chat()` and `stream()` when the server emits an error chunk or return
 
 ```typescript
 try {
-  const reply = await client.chat('claude', 'Hello');
+  const reply = await client.llm('claude').chat('Hello');
 } catch (e) {
   if (e instanceof DaimonError) console.error('daimon error:', e.message);
 }
@@ -227,7 +227,7 @@ const SESSION = 'repl-session';
 while (true) {
   const input = await rl.question('You: ');
   process.stdout.write('Claude: ');
-  for await (const text of client.stream('claude', input, { session_id: SESSION })) {
+  for await (const text of client.llm('claude').stream(input, { session_id: SESSION })) {
     process.stdout.write(text);
   }
   console.log();
@@ -237,7 +237,7 @@ while (true) {
 ### Streaming with inference parameters
 
 ```typescript
-for await (const text of client.stream('gpt4o', 'Explain async/await.', {
+for await (const text of client.llm('gpt4o').stream('Explain async/await.', {
   model:       'gpt-4o',
   temperature: 0.5,
   max_tokens:  200,
@@ -265,7 +265,7 @@ const extractor = new Tool(
   },
 );
 
-for await (const chunk of client.converse('claude', {
+for await (const chunk of client.llm('claude').converse({
   messages: [{ role: 'user', content: 'Alice met Bob in Paris last Tuesday.' }],
   tools:    [extractor],
 })) {

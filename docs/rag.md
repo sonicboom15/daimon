@@ -108,7 +108,7 @@ These are injected alongside MCP tools and available in every chat request. The 
 
 ```python
 # No special client code needed — the LLM decides when to call the tools
-reply = client.chat("claude", "What does our documentation say about authentication?")
+reply = client.llm("claude").chat("What does our documentation say about authentication?")
 # The model may call docs_search("authentication") automatically
 ```
 
