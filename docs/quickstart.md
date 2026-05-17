@@ -148,6 +148,26 @@ INFO daimon listening addr=127.0.0.1:3500
     }
     ```
 
+=== "Java SDK"
+
+    Add the dependency to your `build.gradle`, then:
+
+    ```groovy
+    dependencies {
+        implementation 'io.github.sonicboom15:daimon-client:0.1.0'
+    }
+    ```
+
+    ```java
+    import io.github.sonicboom15.daimon.Client;
+
+    Client client = new Client();
+    for (String text : client.llm("claude").stream("What is a daimon?")) {
+        System.out.print(text);
+        System.out.flush();
+    }
+    ```
+
 === "Python (async)"
 
     ```python
@@ -191,6 +211,14 @@ INFO daimon listening addr=127.0.0.1:3500
     Native fetch, async generators, full type safety.
 
     [:octicons-arrow-right-24: TypeScript SDK](sdk/typescript.md)
+
+-   :material-language-java:{ .lg .middle } **Java SDK**
+
+    ---
+
+    Synchronous client, streaming via `Iterable`, Java 17+.
+
+    [:octicons-arrow-right-24: Java SDK](sdk/java.md)
 
 -   :material-tools:{ .lg .middle } **Tool Calls (MCP)**
 

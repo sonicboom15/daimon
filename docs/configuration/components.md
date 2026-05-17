@@ -33,11 +33,11 @@ All fields under `defaults:` are optional. Request values always take precedence
 | `temperature` | float | all | Sampling temperature |
 | `max_tokens` | int | all | Maximum output tokens |
 | `top_p` | float | all | Nucleus sampling probability |
-| `top_k` | int | Anthropic | Top-K sampling |
+| `top_k` | int | Anthropic, Gemini | Top-K sampling |
 | `stop` | list of strings | all | Stop sequences |
-| `frequency_penalty` | float | OpenAI, llamacpp | Frequency penalty |
-| `presence_penalty` | float | OpenAI, llamacpp | Presence penalty |
-| `seed` | int | OpenAI, llamacpp | RNG seed for reproducibility |
+| `frequency_penalty` | float | OpenAI, llamacpp, Mistral | Frequency penalty |
+| `presence_penalty` | float | OpenAI, llamacpp, Mistral | Presence penalty |
+| `seed` | int | OpenAI, llamacpp, Mistral | RNG seed for reproducibility |
 | `system` | string | all | Default system prompt (used only when the request contains no system message) |
 
 ```yaml
@@ -57,6 +57,8 @@ defaults:
 |---|---|---|
 | `anthropic` | `ANTHROPIC_API_KEY` | Claude models |
 | `openai` | `OPENAI_API_KEY` | GPT models |
+| `gemini` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | Google Gemini models via native REST API |
+| `mistral` | `MISTRAL_API_KEY` | Mistral AI models |
 | `llamacpp` | — | Any OpenAI-compatible local server (Ollama, LM Studio, llama.cpp) |
 
 See the [Providers](../providers/openai.md) section for per-provider metadata fields and supported parameters.

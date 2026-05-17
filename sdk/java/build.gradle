@@ -3,10 +3,13 @@
 
 plugins {
     id 'java-library'
+    id 'com.vanniktech.maven.publish' version '0.30.0'
 }
 
-group = 'io.github.sonicboom15'
-version = '0.1.0'
+group   = 'io.github.sonicboom15'
+// In CI the workflow sets RELEASE_VERSION=<tag without leading v>.
+// Locally the literal '0.1.0' is used.
+version = System.getenv('RELEASE_VERSION') ?: '0.1.0'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -22,9 +25,61 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.3'
     testImplementation 'org.junit.jupiter:junit-jupiter-params:5.11.3'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.3'
+    testRuntimeOnly    'org.junit.jupiter:junit-jupiter-engine:5.11.3'
 }
 
 test {
     useJUnitPlatform()
+}
+
+// ── Maven Central (Central Publishing Portal) ─────────────────────────────────
+// com.vanniktech.maven.publish handles POM requirements, sources/javadoc jars,
+// GPG signing, and Central Portal upload in one plugin.
+// Credentials are passed as Gradle properties via ORG_GRADLE_PROJECT_* env vars.
+
+mavenPublishing {
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
+
+    coordinates('io.github.sonicboom15', 'daimon-client', version as String)
+
+    pom {
+        name        = 'Daimon Java SDK'
+        description = 'Java client for the Daimon AI sidecar runtime'
+        url         = 'https://github.com/sonicboom15/daimon'
+        licenses {
+            license {
+                name = 'Apache License, Version 2.0'
+                url  = 'https://www.apache.org/licenses/LICENSE-2.0'
+            }
+        }
+        developers {
+            developer {
+                id   = 'sonicboom15'
+                name = 'sonicboom15'
+            }
+        }
+        scm {
+            connection          = 'scm:git:git://github.com/sonicboom15/daimon.git'
+            developerConnection = 'scm:git:ssh://github.com/sonicboom15/daimon.git'
+            url                = 'https://github.com/sonicboom15/daimon'
+        }
+    }
+}
+
+// ── GitHub Packages ───────────────────────────────────────────────────────────
+// com.vanniktech applies maven-publish internally, so publishing.repositories works.
+// Local override: set gpr.user and gpr.key in ~/.gradle/gradle.properties.
+
+publishing {
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url  = 'https://maven.pkg.github.com/sonicboom15/daimon'
+            credentials {
+                username = System.getenv('GITHUB_ACTOR') ?: findProperty('gpr.user') ?: ''
+                password = System.getenv('GITHUB_TOKEN') ?: findProperty('gpr.key')  ?: ''
+            }
+        }
+    }
 }

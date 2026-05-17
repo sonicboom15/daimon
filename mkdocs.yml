@@ -78,6 +78,7 @@ nav:
   - SDKs:
       - Python: sdk/python.md
       - TypeScript: sdk/typescript.md
+      - Java: sdk/java.md
   - Stores:
       - Overview: stores/index.md
       - RAG Enrichment: rag.md
@@ -93,6 +94,8 @@ nav:
   - Providers:
       - OpenAI: providers/openai.md
       - Anthropic: providers/anthropic.md
+      - Gemini: providers/gemini.md
+      - Mistral: providers/mistral.md
       - Local models (llamacpp): providers/llamacpp.md
   - Tool Calls (MCP): mcp.md
   - Observability: observability.md
