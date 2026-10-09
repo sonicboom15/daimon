@@ -575,6 +575,32 @@ rows = graph.cypher("MATCH (a)-[:KNOWS]->(b) RETURN a.name, b.name")
 
 Both stores also generate `{name}_cypher`, `{name}_add_node`, and `{name}_add_edge` tools that the LLM can call directly via the agentic loop.
 
+### NER & Decision Models
+
+Daimon provides high-throughput span extraction and calibrated discriminative decision primitives to support deterministic coding pipelines without burning generative tokens.
+
+#### Named Entity Recognition (NER)
+
+| Type | Backend | Notes |
+|---|---|---|
+| `ner/http` | External HTTP service | FastAPI, Triton, or TEI microservices |
+| `ner/onnx` | Local ONNX Runtime | GLiNER, BioLinkBERT, token classification |
+
+**HTTP API:** `POST /v1/ner/{name}/extract`
+
+When configured, Daimon also registers an auto-generated `{name}_extract` tool for the LLM.
+
+#### Decision Models
+
+| Type | Backend | Notes |
+|---|---|---|
+| `decision/http` | Generic webhook | Conforms to `/choose` and `/verify` conventions |
+| `decision/jev` | TypeSafe / Jev API | Calibrated discrete candidate selection and assertion verification |
+
+**HTTP API:** `POST /v1/decision/{name}/choose` · `POST /v1/decision/{name}/verify`
+
+When configured, Daimon registers `{name}_choose` and `{name}_verify` tools for the LLM.
+
 ---
 
 ## Supported providers

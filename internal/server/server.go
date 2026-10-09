@@ -13,8 +13,10 @@ import (
 	"strings"
 
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/decision"
 	"github.com/sonicboom15/daimon/internal/mcp"
 	"github.com/sonicboom15/daimon/internal/memory"
+	"github.com/sonicboom15/daimon/internal/ner"
 	"github.com/sonicboom15/daimon/internal/session"
 )
 
@@ -31,21 +33,27 @@ type Server struct {
 	components      map[string]conversation.Conversation
 	stores          map[string]memory.MemoryStore
 	graphs          map[string]memory.GraphStore
-	componentStores map[string]string // LLM component name → vector store name (RAG)
-	tools           []conversation.Tool   // aggregated from MCP servers + auto-generated store tools
-	toolRoutes      map[string]toolCaller // MCP tool name → owning MCP client
+	nerModels       map[string]ner.Model
+	decisionModels  map[string]decision.Model
+	componentStores map[string]string             // LLM component name → vector store name (RAG)
+	tools           []conversation.Tool           // aggregated from MCP servers + auto-generated store tools
+	toolRoutes      map[string]toolCaller         // MCP tool name → owning MCP client
 	storeRoutes     map[string]memory.MemoryStore // store tool name prefix → store
 	graphRoutes     map[string]memory.GraphStore  // graph tool name prefix → graph store
+	nerRoutes       map[string]ner.Model          // ner tool name prefix → ner model
+	decisionRoutes  map[string]decision.Model     // decision tool name prefix → decision model
 	sessions        session.SessionStore
 }
 
 // New creates a Server, pre-fetches tool catalogues from all MCP clients,
-// generates store/graph tool definitions, and registers HTTP routes.
+// generates store/graph/ner/decision tool definitions, and registers HTTP routes.
 func New(
 	components map[string]conversation.Conversation,
 	mcpClients []*mcp.Client,
 	stores map[string]memory.MemoryStore,
 	graphs map[string]memory.GraphStore,
+	nerModels map[string]ner.Model,
+	decisionModels map[string]decision.Model,
 	componentStores map[string]string,
 	sessionSt session.SessionStore,
 ) *Server {
@@ -54,10 +62,14 @@ func New(
 		components:      components,
 		stores:          stores,
 		graphs:          graphs,
+		nerModels:       nerModels,
+		decisionModels:  decisionModels,
 		componentStores: componentStores,
 		toolRoutes:      make(map[string]toolCaller),
 		storeRoutes:     make(map[string]memory.MemoryStore),
 		graphRoutes:     make(map[string]memory.GraphStore),
+		nerRoutes:       make(map[string]ner.Model),
+		decisionRoutes:  make(map[string]decision.Model),
 		sessions:        sessionSt,
 	}
 
@@ -119,6 +131,39 @@ func New(
 		slog.Info("registered graph store tools", "store", name)
 	}
 
+	// Auto-generate tool definitions for every NER model.
+	for name, nm := range nerModels {
+		safeName := strings.ReplaceAll(name, "-", "_")
+		toolName := safeName + "_extract"
+		extractTool := conversation.Tool{
+			Name:        toolName,
+			Description: fmt.Sprintf("Extract named entities and spans from text using %s.", name),
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string","description":"Text to extract entities from."},"labels":{"type":"array","items":{"type":"string"},"description":"Custom labels overriding defaults."}},"required":["text"]}`),
+		}
+		s.tools = append(s.tools, extractTool)
+		s.nerRoutes[toolName] = nm
+		slog.Info("registered NER tools", "model", name)
+	}
+
+	// Auto-generate tool definitions for every decision model.
+	for name, dm := range decisionModels {
+		safeName := strings.ReplaceAll(name, "-", "_")
+		chooseTool := conversation.Tool{
+			Name:        safeName + "_choose",
+			Description: fmt.Sprintf("Selects the single best match among a list of discrete candidates based on state context using %s.", name),
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"question":{"type":"string","description":"The target question."},"choices":{"type":"array","items":{"type":"string"},"description":"Candidate list."},"state":{"type":"string","description":"Context excerpt."}},"required":["question","choices"]}`),
+		}
+		verifyTool := conversation.Tool{
+			Name:        safeName + "_verify",
+			Description: fmt.Sprintf("Returns calibrated truth probability for a boolean assertion given context using %s.", name),
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"statement":{"type":"string","description":"Statement to verify against state."},"state":{"type":"string","description":"Context excerpt."}},"required":["statement"]}`),
+		}
+		s.tools = append(s.tools, chooseTool, verifyTool)
+		s.decisionRoutes[safeName+"_choose"] = dm
+		s.decisionRoutes[safeName+"_verify"] = dm
+		slog.Info("registered decision tools", "model", name)
+	}
+
 	s.routes()
 	return s
 }
@@ -140,6 +185,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/graph/{store}/edges", s.handleGraphAddEdge)
 	s.mux.HandleFunc("POST /v1/graph/{store}/cypher", s.handleGraphCypher)
 	s.mux.HandleFunc("DELETE /v1/graph/{store}/nodes/{id}", s.handleGraphDelete)
+
+	// NER operations.
+	s.mux.HandleFunc("POST /v1/ner/{name}/extract", s.handleNERExtract)
+
+	// Decision operations.
+	s.mux.HandleFunc("POST /v1/decision/{name}/choose", s.handleDecisionChoose)
+	s.mux.HandleFunc("POST /v1/decision/{name}/verify", s.handleDecisionVerify)
 }
 
 // ServeHTTP implements http.Handler.

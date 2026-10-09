@@ -11,9 +11,11 @@ import (
 
 	"github.com/sonicboom15/daimon/internal/config"
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/decision"
 	"github.com/sonicboom15/daimon/internal/embedding"
 	"github.com/sonicboom15/daimon/internal/mcp"
 	"github.com/sonicboom15/daimon/internal/memory"
+	"github.com/sonicboom15/daimon/internal/ner"
 	"github.com/sonicboom15/daimon/internal/server"
 	"github.com/sonicboom15/daimon/internal/session"
 	"github.com/sonicboom15/daimon/internal/telemetry"
@@ -34,13 +36,15 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 		return nil, nil, fmt.Errorf("setting up telemetry: %w", err)
 	}
 
-	// Wiring order: embedders → session store → vector stores → graph stores → LLM components.
+	// Wiring order: embedders → ner → session store → vector stores → graph stores → decision → LLM components.
 	// Each layer can only reference names resolved in a prior layer.
 	embedders := make(map[string]embedding.Embedder)
+	nerModels := make(map[string]ner.Model)
 	var sessionSt session.SessionStore = session.NewInMemory()
 	sessionConfigured := false
 	vectorStores := make(map[string]memory.MemoryStore)
 	graphStores := make(map[string]memory.GraphStore)
+	decisionModels := make(map[string]decision.Model)
 	llmComponents := make(map[string]conversation.Conversation)
 	componentStores := make(map[string]string) // LLM component name → vector store name
 
@@ -55,6 +59,16 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 			embedders[comp.Name] = emb
 			slog.Info("registered embedder", "name", comp.Name, "type", comp.Type)
 			continue
+		}
+
+		// 2. NER registry.
+		if nm, nerErr := ner.New(comp.Type, ner.Config{Metadata: baseCfg}); nerErr == nil {
+			nerModels[comp.Name] = nm
+			slog.Info("registered NER model", "name", comp.Name, "type", comp.Type)
+			continue
+		} else if ner.HasNER(comp.Type) {
+			_ = telShutdown(context.Background())
+			return nil, nil, fmt.Errorf("creating NER model %q: %w", comp.Name, nerErr)
 		}
 
 		// 2. Session registry (at most one session store).
@@ -100,7 +114,17 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 			return nil, nil, fmt.Errorf("creating graph store %q: %w", comp.Name, graphErr)
 		}
 
-		// 5. LLM registry (existing path).
+		// 5. Decision registry.
+		if dm, decErr := decision.New(comp.Type, decision.Config{Metadata: baseCfg}); decErr == nil {
+			decisionModels[comp.Name] = dm
+			slog.Info("registered decision model", "name", comp.Name, "type", comp.Type)
+			continue
+		} else if decision.HasDecision(comp.Type) {
+			_ = telShutdown(context.Background())
+			return nil, nil, fmt.Errorf("creating decision model %q: %w", comp.Name, decErr)
+		}
+
+		// 6. LLM registry (existing path).
 		compCfg := conversation.ComponentConfig{
 			Metadata:    baseCfg,
 			Models:      make(map[string]conversation.ModelConfig, len(comp.Models)),
@@ -139,6 +163,16 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 
 	// If exactly one component of a given type is configured and none is explicitly
 	// named "default", alias it so clients can omit the name entirely.
+	if _, ok := nerModels["default"]; !ok && len(nerModels) == 1 {
+		for _, m := range nerModels {
+			nerModels["default"] = m
+		}
+	}
+	if _, ok := decisionModels["default"]; !ok && len(decisionModels) == 1 {
+		for _, m := range decisionModels {
+			decisionModels["default"] = m
+		}
+	}
 	if _, ok := llmComponents["default"]; !ok && len(llmComponents) == 1 {
 		for _, c := range llmComponents {
 			llmComponents["default"] = c
@@ -174,6 +208,8 @@ func buildSidecar(configPath string) (srv *http.Server, shutdown func(context.Co
 			mcpClients,
 			vectorStores,
 			graphStores,
+			nerModels,
+			decisionModels,
 			componentStores,
 			sessionSt,
 		),

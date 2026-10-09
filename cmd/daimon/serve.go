@@ -39,6 +39,14 @@ import (
 	// Graph store components.
 	_ "github.com/sonicboom15/daimon/internal/components/graph/memgraph"
 	_ "github.com/sonicboom15/daimon/internal/components/graph/neo4j"
+
+	// NER components.
+	_ "github.com/sonicboom15/daimon/internal/components/ner/http"
+	_ "github.com/sonicboom15/daimon/internal/components/ner/onnx"
+
+	// Decision components.
+	_ "github.com/sonicboom15/daimon/internal/components/decision/http"
+	_ "github.com/sonicboom15/daimon/internal/components/decision/jev"
 )
 
 var serveCmd = &cobra.Command{

@@ -140,3 +140,65 @@ See the [Stores](../stores/index.md) section for the full list of vector store t
 ## Graph store components
 
 See the [Stores](../stores/index.md) section for the full list of graph store types and their metadata keys.
+
+---
+
+## NER (Named Entity Recognition) components
+
+NER models extract spans, character offsets, and entity labels from unstructured text without using generative LLM tokens.
+
+### Supported types:
+
+* `ner/http`: Calls an external HTTP microservice endpoint (e.g., local FastAPI, Triton Inference Server, or Hugging Face TEI).
+* `ner/onnx`: Runs token-classification or GLiNER-compatible ONNX models locally.
+
+```yaml
+- name: clinical-ner
+  type: ner/http
+  metadata:
+    base_url: http://localhost:8000
+    api_key: optional-bearer-token
+    default_labels: "disease,symptom,procedure"
+    default_threshold: "0.60"
+    timeout_ms: "5000"
+
+- name: clinical-ner-onnx
+  type: ner/onnx
+  metadata:
+    model_path: /models/gliner-biomed-small.onnx
+    default_labels: "disease,symptom,procedure"
+    default_threshold: "0.60"
+    threads: "4"
+```
+
+When declared, Daimon automatically registers a `{name}_extract` LLM tool in the agentic loop and exposes `POST /v1/ner/{name}/extract`.
+
+---
+
+## Decision model components
+
+Decision components evaluate discrete categorical decisions (`choose`) and assertion verifications (`verify`) using non-autoregressive, calibrated discriminative models.
+
+### Supported types:
+
+* `decision/http`: Generic webhook driver conforming to choice and verify conventions.
+* `decision/jev`: Official TypeSafe / Jev API client.
+
+```yaml
+- name: verifier
+  type: decision/http
+  metadata:
+    base_url: http://localhost:8000
+    timeout_ms: "800"
+
+- name: verifier-jev
+  type: decision/jev
+  metadata:
+    api_key: ${JEV_API_KEY}
+    base_url: https://api.typesafe.com/v1
+    default_model: jev-v1
+    timeout_ms: "800"
+```
+
+When declared, Daimon automatically registers `{name}_choose` and `{name}_verify` tools for LLM agent use and exposes `POST /v1/decision/{name}/choose` and `POST /v1/decision/{name}/verify`.
+

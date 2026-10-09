@@ -29,6 +29,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,11 +42,15 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	// Blank imports register component factories in their respective registries.
+	_ "github.com/sonicboom15/daimon/internal/components/decision/http"
 	_ "github.com/sonicboom15/daimon/internal/components/llm/llamacpp"
+	_ "github.com/sonicboom15/daimon/internal/components/ner/http"
 	_ "github.com/sonicboom15/daimon/internal/components/vector/inmemory"
 
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/decision"
 	"github.com/sonicboom15/daimon/internal/memory"
+	"github.com/sonicboom15/daimon/internal/ner"
 	"github.com/sonicboom15/daimon/internal/server"
 	"github.com/sonicboom15/daimon/internal/session"
 )
@@ -118,6 +123,65 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// Mock HTTP service for NER and Decision in e2e
+	mockBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/extract":
+			resp := ner.ExtractResponse{
+				Entities: []ner.Entity{
+					{
+						Text:       "diabetes",
+						Label:      "disease",
+						Start:      0,
+						End:        8,
+						Confidence: 0.99,
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "/choose":
+			resp := decision.ChoiceResponse{
+				Selected: "E11.9",
+				Index:    0,
+				Probabilities: map[string]float64{
+					"E11.9": 0.95,
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		case "/verify":
+			resp := decision.VerifyResponse{
+				Probability: 0.97,
+				Supported:   true,
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockBackend.Close()
+
+	nerModel, err := ner.New("ner/http", ner.Config{
+		Metadata: map[string]string{
+			"base_url": mockBackend.URL,
+		},
+	})
+	if err != nil {
+		slog.Error("creating ner model", "err", err)
+		container.Terminate(context.Background()) //nolint:errcheck
+		os.Exit(1)
+	}
+
+	decModel, err := decision.New("decision/http", decision.Config{
+		Metadata: map[string]string{
+			"base_url": mockBackend.URL,
+		},
+	})
+	if err != nil {
+		slog.Error("creating decision model", "err", err)
+		container.Terminate(context.Background()) //nolint:errcheck
+		os.Exit(1)
+	}
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		slog.Error("net.Listen", "err", err)
@@ -131,6 +195,8 @@ func TestMain(m *testing.M) {
 			nil, // no MCP servers
 			map[string]memory.MemoryStore{memStore: ms},
 			map[string]memory.GraphStore{},
+			map[string]ner.Model{"clinical-ner": nerModel},
+			map[string]decision.Model{"verifier": decModel},
 			map[string]string{}, // no RAG wiring
 			session.NewInMemory(),
 		),
@@ -142,7 +208,7 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	daimonSrv.Shutdown(context.Background()) //nolint:errcheck
+	daimonSrv.Shutdown(context.Background())  //nolint:errcheck
 	container.Terminate(context.Background()) //nolint:errcheck
 	os.Exit(code)
 }
@@ -340,6 +406,96 @@ func TestE2E_MemoryUnknownStore(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+// ── NER operations ────────────────────────────────────────────────────────────
+
+func TestE2E_NER_Extract(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"text": "patient diagnosed with diabetes",
+	})
+	resp, err := doRequest(t, http.MethodPost, baseURL+"/v1/ner/clinical-ner/extract", body)
+	if err != nil {
+		t.Fatalf("POST /v1/ner/clinical-ner/extract: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, b)
+	}
+
+	var result struct {
+		Entities []struct {
+			Text       string  `json:"text"`
+			Label      string  `json:"label"`
+			Confidence float64 `json:"confidence"`
+		} `json:"entities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(result.Entities) != 1 || result.Entities[0].Text != "diabetes" {
+		t.Errorf("unexpected entities: %+v", result.Entities)
+	}
+}
+
+// ── Decision operations ───────────────────────────────────────────────────────
+
+func TestE2E_Decision_Choose(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"question": "Which ICD-10 code matches diabetes?",
+		"choices":  []string{"E11.9", "I10"},
+	})
+	resp, err := doRequest(t, http.MethodPost, baseURL+"/v1/decision/verifier/choose", body)
+	if err != nil {
+		t.Fatalf("POST /v1/decision/verifier/choose: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, b)
+	}
+
+	var result struct {
+		Selected string             `json:"selected"`
+		Index    int                `json:"index"`
+		Probs    map[string]float64 `json:"probabilities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Selected != "E11.9" {
+		t.Errorf("selected = %q, want E11.9", result.Selected)
+	}
+}
+
+func TestE2E_Decision_Verify(t *testing.T) {
+	body, _ := json.Marshal(map[string]any{
+		"statement": "Patient has diabetes mellitus",
+	})
+	resp, err := doRequest(t, http.MethodPost, baseURL+"/v1/decision/verifier/verify", body)
+	if err != nil {
+		t.Fatalf("POST /v1/decision/verifier/verify: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, b)
+	}
+
+	var result struct {
+		Probability float64 `json:"probability"`
+		Supported   bool    `json:"supported"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !result.Supported || result.Probability < 0.9 {
+		t.Errorf("unexpected verify result: %+v", result)
 	}
 }
 

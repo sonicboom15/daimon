@@ -13,7 +13,9 @@ import (
 	"testing"
 
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/decision"
 	"github.com/sonicboom15/daimon/internal/memory"
+	"github.com/sonicboom15/daimon/internal/ner"
 	"github.com/sonicboom15/daimon/internal/session"
 )
 
@@ -65,10 +67,14 @@ func newTestServer(conv conversation.Conversation) *testServer {
 		components:      map[string]conversation.Conversation{"fake": conv},
 		stores:          make(map[string]memory.MemoryStore),
 		graphs:          make(map[string]memory.GraphStore),
+		nerModels:       make(map[string]ner.Model),
+		decisionModels:  make(map[string]decision.Model),
 		componentStores: make(map[string]string),
 		toolRoutes:      make(map[string]toolCaller),
 		storeRoutes:     make(map[string]memory.MemoryStore),
 		graphRoutes:     make(map[string]memory.GraphStore),
+		nerRoutes:       make(map[string]ner.Model),
+		decisionRoutes:  make(map[string]decision.Model),
 		sessions:        sess,
 	}
 	s.routes()

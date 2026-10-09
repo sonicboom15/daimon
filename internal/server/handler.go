@@ -14,7 +14,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/sonicboom15/daimon/internal/conversation"
+	"github.com/sonicboom15/daimon/internal/decision"
 	"github.com/sonicboom15/daimon/internal/memory"
+	"github.com/sonicboom15/daimon/internal/ner"
 )
 
 func (s *Server) handleConverse(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +168,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// executeTool dispatches a tool call to: vector store → graph store → MCP tool.
+// executeTool dispatches a tool call to: vector store → graph store → NER → decision → MCP tool.
 func (s *Server) executeTool(ctx context.Context, name string, input json.RawMessage) (string, error) {
 	// Vector store tools.
 	if ms, ok := s.storeRoutes[name]; ok {
@@ -175,6 +177,14 @@ func (s *Server) executeTool(ctx context.Context, name string, input json.RawMes
 	// Graph store tools.
 	if gs, ok := s.graphRoutes[name]; ok {
 		return s.executeGraphTool(ctx, name, gs, input)
+	}
+	// NER tools.
+	if nm, ok := s.nerRoutes[name]; ok {
+		return s.executeNERTool(ctx, name, nm, input)
+	}
+	// Decision tools.
+	if dm, ok := s.decisionRoutes[name]; ok {
+		return s.executeDecisionTool(ctx, name, dm, input)
 	}
 	// MCP tools.
 	caller, ok := s.toolRoutes[name]
@@ -283,4 +293,54 @@ func lastUserContent(msgs []conversation.Message) string {
 		}
 	}
 	return ""
+}
+
+func (s *Server) executeNERTool(ctx context.Context, name string, nm ner.Model, input json.RawMessage) (string, error) {
+	var req ner.ExtractRequest
+	if err := json.Unmarshal(input, &req); err != nil {
+		return "", fmt.Errorf("ner tool %q: invalid input: %w", name, err)
+	}
+	resp, err := nm.Extract(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("ner extraction: %w", err)
+	}
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return "", fmt.Errorf("ner serialization: %w", err)
+	}
+	return string(b), nil
+}
+
+func (s *Server) executeDecisionTool(ctx context.Context, name string, dm decision.Model, input json.RawMessage) (string, error) {
+	if strings.HasSuffix(name, "_choose") {
+		var req decision.ChoiceRequest
+		if err := json.Unmarshal(input, &req); err != nil {
+			return "", fmt.Errorf("decision choose tool %q: invalid input: %w", name, err)
+		}
+		resp, err := dm.Choose(ctx, req)
+		if err != nil {
+			return "", fmt.Errorf("decision choose: %w", err)
+		}
+		b, err := json.Marshal(resp)
+		if err != nil {
+			return "", fmt.Errorf("decision serialization: %w", err)
+		}
+		return string(b), nil
+	}
+	if strings.HasSuffix(name, "_verify") {
+		var req decision.VerifyRequest
+		if err := json.Unmarshal(input, &req); err != nil {
+			return "", fmt.Errorf("decision verify tool %q: invalid input: %w", name, err)
+		}
+		resp, err := dm.Verify(ctx, req)
+		if err != nil {
+			return "", fmt.Errorf("decision verify: %w", err)
+		}
+		b, err := json.Marshal(resp)
+		if err != nil {
+			return "", fmt.Errorf("decision serialization: %w", err)
+		}
+		return string(b), nil
+	}
+	return "", fmt.Errorf("unknown decision operation in tool %q", name)
 }

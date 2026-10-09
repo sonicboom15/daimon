@@ -36,6 +36,24 @@ components:
   #     table: daimon_sessions
   #     ttl: "24h"
 
+  # ── NER (Named Entity Recognition) ─────────────────────────────────────────
+  # Exposed at /v1/ner/{name}/extract
+  # The LLM also gets auto-generated {name}_extract tool.
+  # - name: clinical-ner
+  #   type: ner/http
+  #   metadata:
+  #     base_url: http://localhost:8000
+  #     default_labels: "disease,symptom,procedure"
+  #     default_threshold: "0.60"
+  #
+  # - name: clinical-ner-onnx
+  #   type: ner/onnx
+  #   metadata:
+  #     model_path: /models/gliner-biomed-small.onnx
+  #     default_labels: "disease,symptom,procedure"
+  #     default_threshold: "0.60"
+  #     threads: "4"
+
   # ── Vector / Document Stores ───────────────────────────────────────────────
   # Exposed at /v1/memory/{name}/query  etc.
   # The LLM also gets auto-generated search/upsert tools for each store.
@@ -103,6 +121,22 @@ components:
   #     bolt_url: bolt://localhost:7687
   #     protocol: bolt
   #     # username / password optional
+
+  # ── Decision Models ────────────────────────────────────────────────────────
+  # Exposed at /v1/decision/{name}/choose and /v1/decision/{name}/verify
+  # The LLM also gets auto-generated {name}_choose and {name}_verify tools.
+  # - name: verifier
+  #   type: decision/http
+  #   metadata:
+  #     base_url: http://localhost:8000
+  #
+  # - name: verifier-jev
+  #   type: decision/jev
+  #   metadata:
+  #     api_key: ${JEV_API_KEY}
+  #     base_url: https://api.typesafe.com/v1
+  #     default_model: jev-v1
+  #     timeout_ms: "800"
 
   # ── LLM Components ─────────────────────────────────────────────────────────
   # Use memory_store: to enable transparent RAG enrichment from a vector store.

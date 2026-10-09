@@ -428,6 +428,120 @@ await graph.deleteNode('alice');
 
 ---
 
+## NER (Named Entity Recognition) API
+
+Extract entities, spans, character offsets, and confidence scores from raw text.
+
+### `POST /v1/ner/{name}/extract` — Extract named entities
+
+The `{name}` path segment identifies the configured NER component.
+
+#### Request body:
+
+```json
+{
+  "text": "Patient has right knee joint effusion and history of mild asthma.",
+  "labels": ["disease", "symptom", "procedure"],
+  "threshold": 0.60
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `text` | string | **yes** | Unstructured text to extract spans and entities from |
+| `labels` | array of strings | no | Specific labels to extract; overrides component defaults |
+| `threshold` | float | no | Minimum confidence score (0.0 to 1.0) |
+
+#### Response:
+
+```json
+{
+  "entities": [
+    {
+      "text": "right knee joint effusion",
+      "label": "symptom",
+      "start": 12,
+      "end": 37,
+      "confidence": 0.96
+    },
+    {
+      "text": "asthma",
+      "label": "disease",
+      "start": 58,
+      "end": 64,
+      "confidence": 0.94
+    }
+  ]
+}
+```
+
+---
+
+## Decision Model API
+
+Calibrated multi-choice ranking and statement truth verification against context.
+
+### `POST /v1/decision/{name}/choose` — Categorical candidate selection
+
+The `{name}` path segment identifies the configured decision component.
+
+#### Request body:
+
+```json
+{
+  "state": "Patient presents with right knee pain following a sports injury.",
+  "question": "Which ICD-10 code accurately describes laterality?",
+  "choices": ["M25.561", "M25.562", "M25.569"]
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `question` | string | **yes** | Target question to resolve |
+| `choices` | array of strings | **yes** | Candidate list (up to 255 items) |
+| `state` | string | no | Context excerpt / clinical state |
+
+#### Response:
+
+```json
+{
+  "selected": "M25.561",
+  "index": 0,
+  "probabilities": {
+    "M25.561": 0.97,
+    "M25.562": 0.02,
+    "M25.569": 0.01
+  }
+}
+```
+
+### `POST /v1/decision/{name}/verify` — Statement assertion verification
+
+#### Request body:
+
+```json
+{
+  "state": "Patient presents with right knee pain. Examination reveals joint effusion.",
+  "statement": "Right knee joint effusion is documented."
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `statement` | string | **yes** | Boolean assertion to verify |
+| `state` | string | no | Context excerpt / clinical state |
+
+#### Response:
+
+```json
+{
+  "probability": 0.98,
+  "supported": true
+}
+```
+
+---
+
 ## `DELETE /v1/sessions/{id}`
 
 Clears the stored conversation history for the given session ID. Returns `204 No Content`. Idempotent — deleting a session that does not exist is not an error.
