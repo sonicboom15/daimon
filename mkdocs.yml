@@ -91,6 +91,10 @@ nav:
       - Graph Stores:
           - Neo4j: stores/graph/neo4j.md
           - Memgraph: stores/graph/memgraph.md
+  - Inference Primitives:
+      - Overview: inference/index.md
+      - NER (Named Entity Recognition): inference/ner.md
+      - Decision Models: inference/decision.md
   - Providers:
       - OpenAI: providers/openai.md
       - Anthropic: providers/anthropic.md

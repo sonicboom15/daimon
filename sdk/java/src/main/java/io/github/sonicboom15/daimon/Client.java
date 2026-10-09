@@ -74,6 +74,26 @@ public final class Client {
         return new GraphStoreClient(http, baseUrl, store, timeoutMs);
     }
 
+    /** Returns an {@link NERClient} for the {@code "default"} NER model. */
+    public NERClient ner() {
+        return ner("default");
+    }
+
+    /** Returns an {@link NERClient} for the named NER model. */
+    public NERClient ner(String model) {
+        return new NERClient(http, baseUrl, model, timeoutMs);
+    }
+
+    /** Returns a {@link DecisionClient} for the {@code "default"} decision model. */
+    public DecisionClient decision() {
+        return decision("default");
+    }
+
+    /** Returns a {@link DecisionClient} for the named decision model. */
+    public DecisionClient decision(String model) {
+        return new DecisionClient(http, baseUrl, model, timeoutMs);
+    }
+
     // =========================================================================
     // Shorthand helpers
     // =========================================================================

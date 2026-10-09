@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from ._inference import DecisionClient, NERClient
 from ._llm_client import LLMClient
 from ._stores import GraphStoreClient, MemoryStoreClient
 from ._types import Chunk, Message, Tool, ToolCall
@@ -94,6 +95,14 @@ class Client:
     def graph(self, store: str = "default") -> GraphStoreClient:
         """Return a client scoped to the named graph store."""
         return GraphStoreClient(self._base, store, self._client)
+
+    def ner(self, model: str = "default") -> NERClient:
+        """Return a client scoped to the named NER component."""
+        return NERClient(self._base, model, self._client)
+
+    def decision(self, model: str = "default") -> DecisionClient:
+        """Return a client scoped to the named decision model."""
+        return DecisionClient(self._base, model, self._client)
 
 
 def _build_body(

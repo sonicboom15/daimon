@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from ._utils import _build_body, _normalise_input
+from ._inference import AsyncDecisionClient, AsyncNERClient
 from ._llm_client import AsyncLLMClient
 from ._stores import AsyncGraphStoreClient, AsyncMemoryStoreClient
 from ._types import Chunk, Message, Tool, ToolCall
@@ -88,3 +89,11 @@ class AsyncClient:
     def graph(self, store: str = "default") -> AsyncGraphStoreClient:
         """Return an async client scoped to the named graph store."""
         return AsyncGraphStoreClient(self._base, store, self._client)
+
+    def ner(self, model: str = "default") -> AsyncNERClient:
+        """Return an async client scoped to the named NER component."""
+        return AsyncNERClient(self._base, model, self._client)
+
+    def decision(self, model: str = "default") -> AsyncDecisionClient:
+        """Return an async client scoped to the named decision model."""
+        return AsyncDecisionClient(self._base, model, self._client)

@@ -475,6 +475,38 @@ The `{name}` path segment identifies the configured NER component.
 }
 ```
 
+**Python SDK:**
+
+```python
+ner = client.ner("clinical-ner")
+entities = ner.extract(
+    "Patient has right knee joint effusion and history of mild asthma.",
+    labels=["disease", "symptom", "procedure"],
+    threshold=0.60,
+)
+```
+
+**TypeScript SDK:**
+
+```typescript
+const ner = client.ner('clinical-ner');
+const entities = await ner.extract('Patient has right knee joint effusion and history of mild asthma.', {
+  labels: ['disease', 'symptom', 'procedure'],
+  threshold: 0.60,
+});
+```
+
+**Java SDK:**
+
+```java
+NERClient ner = client.ner("clinical-ner");
+List<Entity> entities = ner.extract(
+    "Patient has right knee joint effusion and history of mild asthma.",
+    List.of("disease", "symptom", "procedure"),
+    0.60
+);
+```
+
 ---
 
 ## Decision Model API
@@ -538,6 +570,53 @@ The `{name}` path segment identifies the configured decision component.
   "probability": 0.98,
   "supported": true
 }
+```
+
+**Python SDK:**
+
+```python
+decision = client.decision("verifier")
+choice = decision.choose(
+    question="Which ICD-10 code accurately describes laterality?",
+    choices=["M25.561", "M25.562", "M25.569"],
+    state="Patient presents with right knee pain following a sports injury.",
+)
+
+verification = decision.verify(
+    statement="Right knee joint effusion is documented.",
+    state="Patient presents with right knee pain. Examination reveals joint effusion.",
+)
+```
+
+**TypeScript SDK:**
+
+```typescript
+const decision = client.decision('verifier');
+const choice = await decision.choose(
+  'Which ICD-10 code accurately describes laterality?',
+  ['M25.561', 'M25.562', 'M25.569'],
+  { state: 'Patient presents with right knee pain following a sports injury.' },
+);
+
+const verification = await decision.verify('Right knee joint effusion is documented.', {
+  state: 'Patient presents with right knee pain. Examination reveals joint effusion.',
+});
+```
+
+**Java SDK:**
+
+```java
+DecisionClient decision = client.decision("verifier");
+ChoiceResult choice = decision.choose(
+    "Which ICD-10 code accurately describes laterality?",
+    List.of("M25.561", "M25.562", "M25.569"),
+    "Patient presents with right knee pain following a sports injury."
+);
+
+VerifyResult verification = decision.verify(
+    "Right knee joint effusion is documented.",
+    "Patient presents with right knee pain. Examination reveals joint effusion."
+);
 ```
 
 ---

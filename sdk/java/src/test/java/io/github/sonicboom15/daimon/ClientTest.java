@@ -88,6 +88,18 @@ class ClientTest {
     }
 
     @Test
+    void testNer_returnsNonNull() {
+        assertNotNull(client.ner());
+        assertNotNull(client.ner("clinical"));
+    }
+
+    @Test
+    void testDecision_returnsNonNull() {
+        assertNotNull(client.decision());
+        assertNotNull(client.decision("verifier"));
+    }
+
+    @Test
     void testDefaultConstructor_usesPort3500() {
         // Can't easily test the real default without a running server,
         // but we can verify the LLMClient it returns is non-null.

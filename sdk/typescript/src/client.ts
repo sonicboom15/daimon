@@ -1,3 +1,4 @@
+import { DecisionClient, NERClient } from './inference.js';
 import { GraphStoreClient, MemoryStoreClient } from './stores.js';
 import { Chunk, DaimonError, Message, Tool, ToolCall } from './types.js';
 
@@ -230,5 +231,13 @@ export class Client {
 
   graph(store = 'default'): GraphStoreClient {
     return new GraphStoreClient(this.baseUrl, store, this.timeout);
+  }
+
+  ner(model = 'default'): NERClient {
+    return new NERClient(this.baseUrl, model, this.timeout);
+  }
+
+  decision(model = 'default'): DecisionClient {
+    return new DecisionClient(this.baseUrl, model, this.timeout);
   }
 }

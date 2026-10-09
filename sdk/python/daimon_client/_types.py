@@ -29,6 +29,60 @@ class MemoryResult:
 
 
 @dataclass
+class Entity:
+    """An extracted entity span from NER."""
+
+    text: str
+    label: str
+    start: int = 0
+    end: int = 0
+    confidence: float = 0.0
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> "Entity":
+        return cls(
+            text=d.get("text", ""),
+            label=d.get("label", ""),
+            start=int(d.get("start", 0)),
+            end=int(d.get("end", 0)),
+            confidence=float(d.get("confidence", 0.0)),
+        )
+
+
+@dataclass
+class ChoiceResult:
+    """Result of a decision choose evaluation."""
+
+    selected: str
+    index: int
+    probabilities: dict[str, float] = field(default_factory=dict)
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> "ChoiceResult":
+        probs = d.get("probabilities") or {}
+        return cls(
+            selected=d.get("selected", ""),
+            index=int(d.get("index", 0)),
+            probabilities={str(k): float(v) for k, v in probs.items()},
+        )
+
+
+@dataclass
+class VerifyResult:
+    """Result of a decision assertion verification."""
+
+    probability: float
+    supported: bool
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> "VerifyResult":
+        return cls(
+            probability=float(d.get("probability", 0.0)),
+            supported=bool(d.get("supported", False)),
+        )
+
+
+@dataclass
 class ToolCall:
     id: str
     name: str

@@ -118,3 +118,22 @@ export class Chunk {
     return new Chunk(type, text, toolCall, error);
   }
 }
+
+export interface Entity {
+  text: string;
+  label: string;
+  start: number;
+  end: number;
+  confidence: number;
+}
+
+export interface ChoiceResult {
+  selected: string;
+  index: number;
+  probabilities: Record<string, number>;
+}
+
+export interface VerifyResult {
+  probability: number;
+  supported: boolean;
+}
